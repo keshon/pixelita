@@ -13,7 +13,8 @@ import (
 )
 
 type DiffOptions struct {
-	Out     string // where to write the difference map, empty for none
+	Out     string          // where to write the difference map, empty for none
+	Crop    image.Rectangle // measure only this region of both; empty means all
 	Amplify float64
 	MinPSNR float64
 	MinSSIM float64
@@ -36,6 +37,29 @@ func Diff(a, b string, o DiffOptions) report.Item {
 	item.BytesBefore = int64(len(rawA))
 	item.BytesAfter = int64(len(rawB))
 	item.GainPercent = gain(item.BytesBefore, item.BytesAfter)
+
+	// A whole-image average answers "is it broken" and hides where. Quantisers
+	// and encoders do not spread their error evenly: on one photograph measured
+	// here the smooth sky was a tie between two programs while the shadows
+	// differed by 2.3 dB, and only the per-region figure said so. The rectangle
+	// is the same one img-look takes, so a region can be looked at and measured
+	// without restating it in different terms.
+	//
+	// The byte counts above stay whole-file on purpose: they describe the files,
+	// which is still what was written, and cropping cannot change that.
+	if !o.Crop.Empty() {
+		ca, err := cropTo(imgio.ToNRGBA(imgA), o.Crop)
+		if err != nil {
+			return fail(item, err, "crop outside image")
+		}
+		cb, err := cropTo(imgio.ToNRGBA(imgB), o.Crop)
+		if err != nil {
+			return fail(item, err, "crop outside image")
+		}
+		imgA, imgB = ca, cb
+		item.Metrics["crop"] = fmt.Sprintf("%dx%d at %d,%d",
+			o.Crop.Dx(), o.Crop.Dy(), o.Crop.Min.X, o.Crop.Min.Y)
+	}
 
 	res, err := metric.Compare(imgA, imgB)
 	if err != nil {

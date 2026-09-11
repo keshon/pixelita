@@ -12,6 +12,11 @@ encoded, measured against the original, and written only when the gain clears
 tools are safe to point at a directory, and it is the property to protect when
 changing anything.
 
+`-crop` means the same rectangle in `img-look` and `img-diff` on purpose: the
+unit of this work is a region, not a file, and looking at one and measuring it
+should not require restating it. Anything else that learns to work on part of an
+image takes the same flag with the same `x,y,w,h` spelling.
+
 The two tools that answer questions rather than change files — `img-diff` and
 `img-look` — are what makes that rule checkable. When a change to an encoder
 needs verifying, measure with the first and look with the second; do not assert

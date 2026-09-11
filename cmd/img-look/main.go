@@ -27,6 +27,10 @@ func main() {
 	flag.StringVar(&opt.Background, "bg", opt.Background,
 		"what transparency is shown against: checker, white, black or none")
 	flag.BoolVar(&opt.Across, "across", false, "lay the panels side by side instead of stacked")
+	flag.IntVar(&opt.Zoom, "zoom", 0,
+		"magnify this many times by repeating pixels, no smoothing; implies -max 0")
+	flag.BoolVar(&opt.Stats, "stats", false,
+		"also report the mean colour and luma range of what is shown")
 	flag.BoolVar(&opt.Label, "label", opt.Label, "write the file name on each panel")
 	flag.StringVar(&opt.Out, "out", opt.Out,
 		"where to write the result; the default is "+ops.LookPath())
@@ -43,9 +47,30 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  img-look before.png after.png                  # stacked, labelled, comparable\n")
 		fmt.Fprintf(os.Stderr, "  img-look -crop 700,380,460,210 a.png b.png     # the same region of both\n")
 		fmt.Fprintf(os.Stderr, "  img-look -max 0 -crop 0,0,64,64 icon.png       # native size, no scaling\n")
+		fmt.Fprintf(os.Stderr, "  img-look -crop 4600,1380,180,105 -zoom 4 a.png b.png\n")
+		fmt.Fprintf(os.Stderr, "                                                 # that region at four times life size\n")
+		fmt.Fprintf(os.Stderr, "  img-look -crop 800,2400,500,250 -stats a.png b.png\n")
+		fmt.Fprintf(os.Stderr, "                                                 # and what those pixels average to\n")
 		fmt.Fprintf(os.Stderr, "  img-look -at '10,20 300,15' shot.png           # the numbers, not the picture\n")
 	}
 	flag.Parse()
+
+	// Magnifying and then capping the size would silently undo the zoom: a
+	// region cut from a large photograph is fitted to 1400px by default, and
+	// -zoom 4 on top of that gives neither the region's own pixels nor four
+	// times them. Asking to magnify is asking for native pixels — unless the
+	// cap was named explicitly, in which case it was meant.
+	if opt.Zoom > 1 {
+		capped := false
+		flag.Visit(func(f *flag.Flag) {
+			if f.Name == "max" {
+				capped = true
+			}
+		})
+		if !capped {
+			opt.Max = 0
+		}
+	}
 
 	if flag.NArg() == 0 {
 		flag.Usage()
@@ -125,6 +150,13 @@ var columns = []report.Column{
 	{Title: "from", Width: 12, Right: true, Value: func(i report.Item) string { return i.Str("from") }},
 	{Title: "shown", Width: 12, Right: true, Value: func(i report.Item) string { return i.Str("to") }},
 	{Title: "crop", Width: 20, Value: func(i report.Item) string { return i.Str("crop") }},
+	{Title: "mean", Width: 8, Value: func(i report.Item) string { return i.Str("mean") }},
+	{Title: "luma", Width: 9, Right: true, Value: func(i report.Item) string {
+		if v, ok := i.Metrics["luma"].([]int); ok && len(v) == 2 {
+			return fmt.Sprintf("%d..%d", v[0], v[1])
+		}
+		return ""
+	}},
 	{Title: "note", Width: 16, Value: func(i report.Item) string {
 		if i.Status == report.StatusFailed {
 			return "failed: " + i.Reason

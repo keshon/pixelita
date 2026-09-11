@@ -20,12 +20,14 @@ import (
 
 func main() {
 	opt := ops.DefaultDiff()
-	var out string
+	var out, cropSpec string
 	var verbose, asJSON bool
 	var jobs int
 
 	flag.StringVar(&out, "out", "",
 		"write difference maps here: a file for one pair, a directory for many")
+	flag.StringVar(&cropSpec, "crop", "",
+		"measure only this region of both, as x,y,w,h; the same rectangle img-look takes")
 	flag.Float64Var(&opt.Amplify, "amplify", opt.Amplify, "how much to brighten the difference map")
 	flag.Float64Var(&opt.MinPSNR, "min-psnr", 0, "fail below this PSNR in dB, 0 disables")
 	flag.Float64Var(&opt.MinSSIM, "min-ssim", 0, "fail below this SSIM, 0 disables")
@@ -46,6 +48,12 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  img-diff -min-psnr 35 ./src ./converted\n")
 	}
 	flag.Parse()
+
+	var err error
+	if opt.Crop, err = ops.ParseRect(cropSpec); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(2)
+	}
 
 	if flag.NArg() != 2 {
 		flag.Usage()
@@ -155,6 +163,10 @@ var columns = []report.Column{
 		}
 		return ""
 	}},
+	// Shown whenever a crop is in force. A PSNR figure means something quite
+	// different for one corner of an image than for the whole of it, and a
+	// reader who cannot see which was measured has been told half a fact.
+	{Title: "region", Width: 20, Value: func(i report.Item) string { return i.Str("crop") }},
 	{Title: "note", Width: 18, Value: func(i report.Item) string {
 		if i.Reason != "" {
 			return string(i.Status) + ": " + i.Reason

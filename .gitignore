@@ -2,3 +2,4 @@
 /.tools/
 *.exe
 /.claude/
+/tmp/

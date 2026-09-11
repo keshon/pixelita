@@ -36,6 +36,8 @@ type LookOptions struct {
 	Crop       image.Rectangle // empty means the whole image
 	Background string          // checker, white, black, none
 	Across     bool            // lay panels side by side rather than stacked
+	Zoom       int             // magnify by this many times, 0 or 1 leaves it alone
+	Stats      bool            // also report what the shown pixels average to
 	Label      bool            // write the file name on each panel
 	Out        string          // empty means LookPath()
 }
@@ -91,9 +93,20 @@ func Look(paths []string, o LookOptions) (*image.NRGBA, []report.Item, error) {
 		item.Metrics["from"] = fmt.Sprintf("%dx%d", src.Rect.Dx(), src.Rect.Dy())
 
 		if !o.Crop.Empty() {
-			src = cropTo(src, o.Crop)
+			cropped, err := cropTo(src, o.Crop)
+			if err != nil {
+				items = append(items, fail(item, err, "crop outside image"))
+				continue
+			}
+			src = cropped
 			item.Metrics["crop"] = fmt.Sprintf("%dx%d at %d,%d",
 				o.Crop.Dx(), o.Crop.Dy(), o.Crop.Min.X, o.Crop.Min.Y)
+		}
+		// Stats are taken here: after the crop, so they describe the region
+		// asked about, and before the background, because compositing onto a
+		// checkerboard would average in the checkerboard.
+		if o.Stats {
+			addStats(&item, src)
 		}
 		if alpha := hasAlpha(src); alpha && o.Background != "none" {
 			src = onBackground(src, o.Background)
@@ -106,6 +119,12 @@ func Look(paths []string, o LookOptions) (*image.NRGBA, []report.Item, error) {
 				item.Metrics["scaled"] = fmt.Sprintf("%dx%d", w, h)
 			}
 		}
+		if o.Zoom > 1 {
+			src = magnify(src, o.Zoom)
+			item.Metrics["zoom"] = o.Zoom
+		}
+		// The label goes on last, at its own size. Drawn before the zoom it
+		// would be magnified into unreadable blocks along with everything else.
 		if o.Label {
 			drawLabel(src, filepath.Base(p))
 		}
@@ -149,14 +168,92 @@ func Probe(path string, points []image.Point) ([]string, error) {
 	return out, nil
 }
 
-func cropTo(src *image.NRGBA, r image.Rectangle) *image.NRGBA {
-	r = r.Add(src.Rect.Min).Intersect(src.Rect)
-	if r.Empty() {
+// magnify replicates each pixel into an n by n block.
+//
+// Deliberately not resize.Resize with a nearest filter. That path converts to
+// linear light as float32 and back, and although a nearest weight of exactly 1
+// should survive the round trip, "should" is not good enough for the one tool
+// whose entire purpose is showing a pixel as it actually is. Copying bytes is
+// exact by construction, and faster.
+func magnify(src *image.NRGBA, n int) *image.NRGBA {
+	if n < 2 {
 		return src
 	}
-	out := image.NewNRGBA(image.Rect(0, 0, r.Dx(), r.Dy()))
-	draw.Draw(out, out.Rect, src, r.Min, draw.Src)
-	return out
+	w, h := src.Rect.Dx(), src.Rect.Dy()
+	dst := image.NewNRGBA(image.Rect(0, 0, w*n, h*n))
+	for y := 0; y < h; y++ {
+		// Build one magnified row, then copy it n times: the rows of a block
+		// are identical, so the inner work is done once per source row.
+		row := dst.Pix[dst.PixOffset(0, y*n) : dst.PixOffset(0, y*n)+w*n*4]
+		for x := 0; x < w; x++ {
+			s := src.Pix[src.PixOffset(src.Rect.Min.X+x, src.Rect.Min.Y+y):][:4]
+			for k := 0; k < n; k++ {
+				copy(row[(x*n+k)*4:], s)
+			}
+		}
+		for k := 1; k < n; k++ {
+			copy(dst.Pix[dst.PixOffset(0, y*n+k):], row)
+		}
+	}
+	return dst
+}
+
+// addStats records what the region averages to.
+//
+// This exists because the alternative kept being invented on the spot: resize
+// the region to one pixel and read it, or write a script. Both work; neither is
+// something anyone should have to think of. Twice in one afternoon these three
+// numbers caught a wrong reading of a picture that looked convincing.
+//
+// The mean is taken in linear light, by handing the region to the toolkit's own
+// resampler and asking for one pixel. An arithmetic mean of sRGB values is the
+// familiar mistake this repository avoids everywhere else, and on dark material
+// it is not a rounding difference: the same shadow patch reads 32 19 9 averaged
+// as light and 25 13 5 averaged as code values. Routing through Resize also
+// makes the number agree with `img-resize -filter box -fit exact -width 1
+// -height 1` by construction rather than by coincidence — a property a test can
+// hold us to — and it weights each pixel by its alpha, so what cannot be seen
+// cannot move the answer.
+//
+// The luma range is deliberately not linearised. It answers "did the darkest
+// pixels get crushed towards black", which is a question about stored values.
+func addStats(item *report.Item, src *image.NRGBA) {
+	one := resize.Resize(src, 1, 1, resize.Box)
+	m := one.NRGBAAt(one.Rect.Min.X, one.Rect.Min.Y)
+	if m.A == 0 {
+		item.Metrics["mean"] = "fully transparent"
+		return
+	}
+	item.Metrics["mean"] = fmt.Sprintf("#%02x%02x%02x", m.R, m.G, m.B)
+	item.Metrics["meanRGB"] = []int{int(m.R), int(m.G), int(m.B)}
+
+	lo, hi, seen := 255, 0, false
+	for y := src.Rect.Min.Y; y < src.Rect.Max.Y; y++ {
+		for x := src.Rect.Min.X; x < src.Rect.Max.X; x++ {
+			c := src.NRGBAAt(x, y)
+			if c.A == 0 {
+				continue
+			}
+			// Rec. 709 luma on sRGB values: this is for judging whether the
+			// shadows moved, not for colour science.
+			l := (2126*int(c.R) + 7152*int(c.G) + 722*int(c.B)) / 10000
+			lo, hi, seen = min(lo, l), max(hi, l), true
+		}
+	}
+	if seen {
+		item.Metrics["luma"] = []int{lo, hi}
+	}
+}
+
+func cropTo(src *image.NRGBA, r image.Rectangle) (*image.NRGBA, error) {
+	clipped := r.Add(src.Rect.Min).Intersect(src.Rect)
+	if clipped.Empty() {
+		return nil, fmt.Errorf("crop %dx%d at %d,%d lies outside the image (%dx%d)",
+			r.Dx(), r.Dy(), r.Min.X, r.Min.Y, src.Rect.Dx(), src.Rect.Dy())
+	}
+	out := image.NewNRGBA(image.Rect(0, 0, clipped.Dx(), clipped.Dy()))
+	draw.Draw(out, out.Rect, src, clipped.Min, draw.Src)
+	return out, nil
 }
 
 // onBackground makes transparency visible. A checkerboard is the convention

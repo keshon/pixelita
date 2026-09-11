@@ -192,6 +192,52 @@ to libpng by **0.7%** — the standard `compress/flate` is barely behind zlib
 here. With dithering off on both sides, what is left is a clean comparison of
 the palettes: **−4% and +0.8 dB** in our favour.
 
+### And on material the palette hates
+
+The set above is what a project actually contains. A single 17.9-megapixel
+night photograph — a long exposure, star trails over a gradient sky, 100 591
+distinct colours, 34.2 MB — is the opposite: the case nobody would sensibly
+quantise, and the one where a palette has least to work with. `img-scan` says
+as much before anything runs, and names `img-webp` (−80%) over `img-quant`
+(−69%).
+
+| | Size | PSNR | SSIM | Time |
+|---|---|---|---|---|
+| img-quant | 11 050 349 | **33.2 dB** | **0.958** | 9.8 s |
+| pngquant 2.x | **11 036 728** | 31.6 dB | 0.932 | **8.4 s** |
+
+**The size advantage is gone — a 0.12% loss — and the whole difference moves
+into quality: +1.6 dB and +0.026 SSIM.** On noisy continuous-tone material both
+programs hit the same floor, because what PNG can do with 256 dithered colours
+over 17.9 megapixels is bounded by the dithering noise, not by the palette.
+
+Where that quality sits is the interesting part, and it is not where one would
+guess. Measured per region:
+
+| Region | img-quant | pngquant |
+|---|---|---|
+| smooth gradient sky | 34.9 dB / 0.952 | 34.8 dB / **0.963** |
+| grass, mid-tone texture | **30.5 dB / 0.957** | 29.1 dB / 0.935 |
+| foliage, deep shadow | **33.0 dB / 0.930** | 30.7 dB / **0.859** |
+
+The gradient is a tie — pngquant is fractionally better there by SSIM. The gap
+is entirely in the dark textured areas, and the mean colour of one shadow patch
+says why:
+
+```
+original    32 19  9
+img-quant   31 23 10    luminance held, a slight lift towards green
+pngquant    27 16  7    about 15% darker — the shadows are crushed
+```
+
+A palette spent on a bright sky leaves nothing for dark neutral greens, and they
+collapse towards black taking the texture with them. That collapse is what SSIM
+0.859 is measuring. The k-means refinement is what buys those entries back, and
+it is the step the off-the-shelf Go quantisers omit.
+
+The honest summary of both tables: **the size win is material-dependent and the
+fidelity win is not.**
+
 ## Flags
 
 | Flag | Default | What it does |
@@ -324,8 +370,16 @@ a conversion that scored well and still looks wrong.
 ```bash
 img-diff before.png after.png               # one pair
 img-diff -out diff.png before.png after.png # plus a difference map
+img-diff -crop 4500,1300,500,250 a.png b.png # only that region
 img-diff -min-psnr 35 ./src ./converted     # directories; exit 1 on a failure
 ```
+
+`-crop` takes the same rectangle `img-look` takes, so a region can be looked at
+and measured without restating it in different terms. It is worth reaching for
+more often than it sounds: a whole-image average answers *is it broken* and
+hides *where*. On the photograph measured under `img-quant`, two quantisers were
+a tie across the smooth sky and 2.3 dB apart in the shadows, and only the
+per-region figures said so.
 
 Two directories are paired by file name ignoring the extension, so a folder of
 PNGs can be checked directly against the WebP files made from it.
@@ -375,8 +429,24 @@ img-look hero.webp                            # any format in, one PNG to open
 img-look before.png after.png                 # stacked, labelled, a red rule between
 img-look -crop 700,380,460,210 a.png b.png    # the same region of both
 img-look -max 0 -crop 0,0,64,64 icon.png      # native pixels, no scaling
+img-look -crop 4600,1380,180,105 -zoom 4 a.png b.png   # that region, four times life size
+img-look -crop 800,2400,500,250 -stats a.png b.png     # and what it averages to
 img-look -at '450,300 20,40' shot.png         # the numbers instead of the picture
 ```
+
+`-zoom` repeats pixels; it does not resample. The distinction matters because
+the thing being inspected at four times life size is usually a suspected
+rounding error, and a resampler would put a plausible picture in front of
+someone trying to find out whether the pixels are right. It implies `-max 0`,
+since magnifying and then capping the size would quietly undo the magnification.
+
+`-stats` reports what the shown region averages to and how far its luma spreads.
+The mean is taken **in linear light**, by handing the region to the same
+resampler `img-resize` uses and asking for one pixel — so it agrees with
+`img-resize -filter box -fit exact -width 1 -height 1` by construction, and a
+test says so. An arithmetic mean of sRGB values would be a different number and
+a wrong one: on the shadow patch measured above it reads 25 13 5 instead of
+32 19 9.
 
 The composite lands in the temporary directory — `%TEMP%\pixelita\look.png`,
 `/tmp/pixelita/look.png` — and the absolute path is printed, and repeated in
