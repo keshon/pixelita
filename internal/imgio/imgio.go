@@ -29,7 +29,18 @@ func Decode(raw []byte) (image.Image, string, error) {
 		img, err := decodeWebP(raw)
 		return img, "webp", err
 	}
-	return image.Decode(bytes.NewReader(raw))
+	img, format, err := image.Decode(bytes.NewReader(raw))
+	if err != nil || format != "jpeg" {
+		return img, format, err
+	}
+	// A photograph taken sideways carries its rotation as a tag rather than in
+	// its pixels. Applying it here means everything downstream works on the
+	// image as a person would see it — which matters because none of what we
+	// write back carries the tag onward.
+	if o := readOrientation(raw); o != OrientNormal {
+		img = applyOrientation(ToNRGBA(img), o)
+	}
+	return img, format, nil
 }
 
 func isWebP(raw []byte) bool {
@@ -191,8 +202,9 @@ type Header struct {
 	ColourType  string
 	HasAlpha    bool
 	Interlaced  bool
-	Progressive bool  // JPEG only
-	Ancillary   int64 // bytes of metadata and other non-essential chunks
+	Progressive bool        // JPEG only
+	Orientation Orientation // JPEG only; already applied by Decode
+	Ancillary   int64       // bytes of metadata and other non-essential chunks
 }
 
 // ReadHeader parses what it can without decoding pixels. Walking the chunk
@@ -288,6 +300,13 @@ func jpegHeader(raw []byte) (Header, error) {
 	}
 	if h.Width == 0 {
 		return h, fmt.Errorf("jpeg: no frame header")
+	}
+	// The frame header gives the stored size. Decode turns the pixels, so the
+	// two would disagree on a sideways photograph unless the size is reported
+	// the way it will be seen.
+	h.Orientation = readOrientation(raw)
+	if h.Orientation.Turns() {
+		h.Width, h.Height = h.Height, h.Width
 	}
 	return h, nil
 }
