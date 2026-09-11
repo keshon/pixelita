@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="ru" data-theme="dark" data-density="compact">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pixelita</title>
+<link rel="stylesheet" href="vendor/instrument.min.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<a class="inst-skip-link" href="#main">К содержимому</a>
+
+<div class="inst-shell">
+
+  <!-- Each menu stands right after its own trigger: that is what lets the
+       strip mark the open one without the markup tracking it. -->
+  <div class="inst-menubar" role="menubar" aria-label="Главное меню">
+    <button class="inst-menubar-item" type="button" role="menuitem" popovertarget="mFile">Файл</button>
+    <div class="inst-popover inst-popover--anchored" id="mFile" popover>
+      <div class="inst-menu" role="menu">
+        <button class="inst-menu-item" type="button" role="menuitem" id="mnOpen">
+          Открыть папку… <span class="inst-menu-shortcut"><kbd>Ctrl</kbd><kbd>O</kbd></span></button>
+        <button class="inst-menu-item" type="button" role="menuitem" id="mnRescan">
+          Пересмотреть <span class="inst-menu-shortcut"><kbd>F5</kbd></span></button>
+        <span class="inst-menu-sep"></span>
+        <button class="inst-menu-item" type="button" role="menuitem" id="mnQuit" data-tone="error">Выход</button>
+      </div>
+    </div>
+
+    <button class="inst-menubar-item" type="button" role="menuitem" popovertarget="mEdit">Правка</button>
+    <div class="inst-popover inst-popover--anchored" id="mEdit" popover>
+      <div class="inst-menu" role="menu">
+        <button class="inst-menu-item" type="button" role="menuitem" id="mnAll">
+          Выделить всё <span class="inst-menu-shortcut"><kbd>Ctrl</kbd><kbd>A</kbd></span></button>
+        <button class="inst-menu-item" type="button" role="menuitem" id="mnNone">Снять выделение</button>
+        <button class="inst-menu-item" type="button" role="menuitem" id="mnInvert">Обратить выделение</button>
+      </div>
+    </div>
+
+    <button class="inst-menubar-item" type="button" role="menuitem" popovertarget="mView">Вид</button>
+    <div class="inst-popover inst-popover--anchored" id="mView" popover>
+      <div class="inst-menu" role="menu">
+        <span class="inst-menu-label">Тема</span>
+        <button class="inst-menu-item" type="button" role="menuitem" data-theme-set="dark">Тёмная</button>
+        <button class="inst-menu-item" type="button" role="menuitem" data-theme-set="light">Светлая</button>
+        <span class="inst-menu-sep"></span>
+        <button class="inst-menu-item" type="button" role="menuitem" id="mnHideIdle" aria-checked="false">
+          Скрывать неподходящие</button>
+      </div>
+    </div>
+
+    <button class="inst-menubar-item" type="button" role="menuitem" popovertarget="mRun">Прогон</button>
+    <div class="inst-popover inst-popover--anchored" id="mRun" popover>
+      <div class="inst-menu" role="menu">
+        <span class="inst-menu-label">Действие</span>
+        <button class="inst-menu-item" type="button" role="menuitem" data-set-op="quant">Палитра</button>
+        <button class="inst-menu-item" type="button" role="menuitem" data-set-op="webp">WebP</button>
+        <button class="inst-menu-item" type="button" role="menuitem" data-set-op="jpeg">JPEG</button>
+        <button class="inst-menu-item" type="button" role="menuitem" data-set-op="resize">Размер</button>
+        <span class="inst-menu-sep"></span>
+        <button class="inst-menu-item" type="button" role="menuitem" id="mnDry" aria-checked="true">
+          Пробный прогон</button>
+        <button class="inst-menu-item" type="button" role="menuitem" id="mnRecursive" aria-checked="false">
+          Вложенные папки</button>
+        <span class="inst-menu-sep"></span>
+        <button class="inst-menu-item" type="button" role="menuitem" id="mnApply">
+          Выполнить <span class="inst-menu-shortcut"><kbd>Enter</kbd></span></button>
+        <button class="inst-menu-item" type="button" role="menuitem" id="mnStop">
+          Остановить <span class="inst-menu-shortcut"><kbd>Esc</kbd></span></button>
+      </div>
+    </div>
+
+    <button class="inst-menubar-item" type="button" role="menuitem" popovertarget="mHelp">Справка</button>
+    <div class="inst-popover inst-popover--anchored" id="mHelp" popover>
+      <div class="inst-menu" role="menu">
+        <button class="inst-menu-item" type="button" role="menuitem" id="mnAbout">О программе</button>
+        <a class="inst-menu-item" role="menuitem" href="https://github.com/keshon/pixelita"
+           target="_blank" rel="noreferrer">Репозиторий</a>
+      </div>
+    </div>
+
+  </div>
+
+  <aside class="inst-shell-aside">
+    <a class="inst-shell-brand" href="#"><span class="inst-dot" data-tone="ok"></span>pixelita</a>
+    <button class="inst-btn inst-btn--sm app-pick" type="button" id="pick">Открыть папку…</button>
+    <div class="inst-tree inst-tree--guides" role="tree" aria-label="Папки" id="tree"></div>
+  </aside>
+
+  <header class="inst-shell-header">
+    <nav aria-label="Путь"><ol class="inst-crumbs" id="crumbs"></ol></nav>
+    <span class="inst-cluster-spacer"></span>
+    <span class="inst-badge" id="folderInfo">—</span>
+    <button class="inst-btn inst-btn--sm" type="button" id="rescan">
+      <svg class="inst-icon" aria-hidden="true"><use href="#i-refresh"/></svg>Пересмотреть</button>
+  </header>
+
+  <main class="inst-shell-main" id="main">
+    <div class="work inst-container inst-container--full">
+
+      <div class="inst-panel">
+        <!-- The survey is not one of the actions: it runs by itself when a
+             folder opens and its answers live in the table. What the segmented
+             chooses is what would be applied, and nothing is applied until the
+             button next to it is pressed. -->
+        <div class="inst-toolbar">
+          <span class="inst-toolbar-label" id="opsLabel">Действие</span>
+          <div class="inst-segmented" role="radiogroup" aria-labelledby="opsLabel" id="ops">
+            <button type="button" role="radio" data-op="quant"  aria-checked="true"  tabindex="0">Палитра</button>
+            <button type="button" role="radio" data-op="webp"   aria-checked="false" tabindex="-1">WebP</button>
+            <button type="button" role="radio" data-op="jpeg"   aria-checked="false" tabindex="-1">JPEG</button>
+            <button type="button" role="radio" data-op="resize" aria-checked="false" tabindex="-1">Размер</button>
+          </div>
+          <span class="inst-toolbar-sep"></span>
+          <span class="inst-search">
+            <input class="inst-input inst-input--sm" type="search" id="filter"
+                   placeholder="Фильтр" aria-label="Фильтр по имени">
+          </span>
+          <span class="inst-toolbar-spacer"></span>
+          <span class="inst-badge" id="selInfo">ничего не выбрано</span>
+        </div>
+
+        <div class="inst-toolbar" id="options"></div>
+
+        <div class="inst-panel-body inst-panel-body--flush">
+          <table class="inst-table inst-table--sticky">
+            <thead>
+              <tr>
+                <th class="inst-col-select">
+                  <label class="inst-checkbox"><input type="checkbox" id="selAll" aria-label="Выбрать все"></label></th>
+                <th class="app-col-thumb"></th>
+                <th>файл</th>
+                <th class="inst-num">размер</th>
+                <th>тип</th>
+                <th class="inst-num">пиксели</th>
+                <th class="inst-num">цветов</th>
+                <th>итог</th>
+                <th class="inst-num">выигрыш</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+          <div class="inst-empty" id="empty">
+            <div class="inst-empty-title">Ничего нет</div>
+            <div class="inst-empty-desc">Выберите папку слева.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="inst-panel" data-rank="lead" id="inspector">
+        <div class="inst-panel-header">
+          <span class="inst-panel-title" id="insTitle">Инспектор</span>
+          <span class="inst-panel-actions" id="insTag"></span>
+        </div>
+        <div class="inst-panel-body inst-stack" id="insBody">
+          <div class="inst-empty"><div class="inst-empty-title">Файл не выбран</div></div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <div class="inst-statusbar">
+    <span id="stState" data-tone="ok">
+      <svg class="inst-icon" aria-hidden="true"><use href="#i-check"/></svg>готов</span>
+    <span id="stFiles"></span>
+    <span id="stSize"></span>
+    <span id="stSaved" data-tone="ok"></span>
+    <span class="inst-cluster-spacer"></span>
+    <span id="stNotes"></span>
+    <button class="inst-btn inst-btn--xs inst-btn--ghost" type="button" id="stStop" hidden>Остановить</button>
+  </div>
+</div>
+
+<dialog class="inst-dialog inst-dialog--scroll" id="dlgPick">
+  <div class="inst-dialog-head">
+    <span class="inst-dialog-title">Открыть папку</span>
+    <span class="inst-dialog-sub" id="pickPath">—</span>
+    <button class="inst-btn inst-btn--sm inst-btn--ghost inst-btn--icon inst-dialog-close"
+            type="button" aria-label="Закрыть" data-close>
+      <svg class="inst-icon" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
+  <div class="inst-dialog-body">
+    <div class="inst-tree" role="tree" aria-label="Диски и папки" id="pickList"></div>
+  </div>
+  <div class="inst-dialog-foot">
+    <span class="inst-dialog-foot-note" id="pickCount"></span>
+    <button class="inst-btn" type="button" data-close>Отмена</button>
+    <button class="inst-btn inst-btn--primary" type="button" id="pickChoose">Открыть</button>
+  </div>
+</dialog>
+
+<dialog class="inst-dialog" id="dlgAbout">
+  <div class="inst-dialog-head">
+    <span class="inst-dialog-title">pixelita</span>
+    <span class="inst-dialog-sub">Инструменты для картинок</span>
+    <button class="inst-btn inst-btn--sm inst-btn--ghost inst-btn--icon inst-dialog-close"
+            type="button" aria-label="Закрыть" data-close>
+      <svg class="inst-icon" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
+  <div class="inst-dialog-body inst-stack">
+    <p class="inst-prose">
+      Обзор папки, палитра для PNG, WebP, ресайз и сжатие JPEG без потерь.
+      Чистый Go. Интерфейс вызывает тот же код, что и команды в терминале.
+    </p>
+    <dl class="inst-kv">
+      <dt>Репозиторий</dt>
+      <dd><a href="https://github.com/keshon/pixelita" target="_blank" rel="noreferrer">github.com/keshon/pixelita</a></dd>
+      <dt>Интерфейс</dt>
+      <dd><a href="https://instrument.keshon.ru" target="_blank" rel="noreferrer">instrument</a></dd>
+      <dt>Корень</dt><dd id="aboutRoot">—</dd>
+    </dl>
+  </div>
+  <div class="inst-dialog-foot">
+    <span class="inst-dialog-foot-note">Built by Señor Mega and best bud Claude</span>
+    <button class="inst-btn inst-btn--primary" type="button" data-close>Закрыть</button>
+  </div>
+</dialog>
+
+<script src="app.js"></script>
+</body>
+</html>

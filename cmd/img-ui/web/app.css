@@ -1,0 +1,69 @@
+/* What is left here is the application's own, not the kit's absence.
+   Three of the workarounds this file used to carry were wrong and are gone:
+   the panel already fills its region and scrolls its body, the work area's side
+   fields are the container's job by design, and the shell now keeps rows for
+   the menu bar and the status bar. See docs/instrument.md. */
+
+html, body { block-size: 100%; margin: 0; overflow: hidden; }
+
+.work {
+  block-size: 100%;
+  min-block-size: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 21rem;
+  gap: var(--space-3);
+}
+.work > * { min-block-size: 0; }
+
+/* A table of machine output needs cells that truncate rather than wrap: a
+   wrapped path breaks the row rhythm, which is the only reason a dense table is
+   readable at all. The kit has the utility; the cell still has to be told how
+   wide it may get. */
+.app-name { max-inline-size: 22rem; }
+.app-name > span { display: block; }
+
+/* A table wide enough to scroll squeezes the columns that never asked for a
+   width, and a thumbnail squeezed to nothing is invisible rather than small —
+   images inherit a max-width of the cell. Both ends need a floor. */
+.app-col-thumb { inline-size: 52px; min-inline-size: 52px; }
+.app-thumb {
+  inline-size: 40px; min-inline-size: 40px; block-size: 28px;
+  object-fit: cover; display: block;
+  border-radius: var(--radius-sm); background: var(--surface-sunken);
+}
+
+/* The comparison is a blink, not a slider. Swapping the whole picture in place
+   is how a difference of a few levels becomes visible at all — a slider hides
+   exactly the artefacts worth seeing, because the eye compares across the seam
+   instead of across time. */
+.app-shot {
+  position: relative; border-radius: var(--radius-md); overflow: hidden;
+  background: var(--surface-sunken); cursor: zoom-in;
+}
+.app-shot img { inline-size: 100%; display: block; }
+.app-shot img + img { position: absolute; inset: 0; opacity: 0; }
+.app-shot[data-show="after"] img + img { opacity: 1; }
+.app-shot-tag {
+  position: absolute; inset-block-end: 4px; inset-inline-start: 4px;
+  font-size: var(--text-2xs); padding: 1px 6px; border-radius: var(--radius-sm);
+  background: var(--surface-page); color: var(--text-secondary);
+}
+
+/* A row the current action cannot touch is still worth seeing — it is part of
+   the folder — but it should not look like a candidate. */
+.app-row-idle { opacity: 0.45; }
+
+.app-pick { inline-size: 100%; justify-content: flex-start; margin-block-end: var(--space-2); }
+
+#options:empty { display: none; }
+#options label {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  font-size: var(--text-xs); color: var(--text-secondary);
+}
+#options input[type="number"] { inline-size: 5.5rem; }
+#options input[type="range"] { inline-size: 7rem; }
+
+#empty { display: none; }
+#empty[data-show="1"] { display: flex; }
+
+#pickList { max-block-size: 46vh; overflow: auto; }
