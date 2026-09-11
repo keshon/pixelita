@@ -22,6 +22,7 @@ Not another converter. What is different is the combination of three things:
 | [`img-jpeg`](cmd/img-jpeg) | shrinks a JPEG **losslessly**; not one pixel changes |
 | [`img-resize`](cmd/img-resize) | resizing, and sets of derived sizes |
 | [`img-diff`](cmd/img-diff) | compares two images: PSNR, SSIM, a difference map |
+| [`img-look`](cmd/img-look) | makes an image **visible**: one PNG to open, or the pixel values |
 
 A web interface exists on the `web-ui` branch and is not part of the set yet:
 the CSS kit it is built on has not settled.
@@ -80,6 +81,21 @@ tool are named fields; anything tool-specific lives in `metrics`, so the schema
 does not grow a column every time a tool learns to measure something. Paths use
 forward slashes on every platform. Exit codes: `0` fine, `1` something failed or
 a threshold was missed, `2` the arguments were wrong.
+
+## Photographs arrive rotated
+
+A phone held sideways does not turn the pixels it writes. It writes the sensor
+as it is and records one EXIF tag saying which way was up, and every viewer is
+expected to honour it. A tool that decodes, works, and encodes again without
+honouring it produces a file that is sideways twice over: the pixels were never
+turned, and the tag that would have turned them did not survive.
+
+So the tag is applied at the moment of decoding, in
+[`internal/imgio`](internal/imgio/exif.go). From there on the image in memory is
+the image a person would see, every tool gets it upright without knowing EXIF
+exists, and `img-scan` reports the size the photograph will appear at rather
+than the one stored. `img-jpeg` is the exception on purpose: it never decodes,
+so the original tag stays where it was and the file keeps working everywhere.
 
 ---
 
@@ -342,6 +358,56 @@ This is the argument for a separate verifier: without it we would never have
 learnt that our own numbers were lying.
 
 ---
+
+# img-look
+
+The tools above change files. This one changes nothing — it answers *let me see
+it*, which turned out to be the thing most often written by hand around this
+repo and thrown away again afterwards.
+
+Four small programs kept being written during this project: one to stack a
+before and an after, one to cut the same region out of both, one to drop a
+transparent image onto a checkerboard, one to print a few pixel values. Ten
+minutes each, deleted each time. They are all the same operation.
+
+```bash
+img-look hero.webp                            # any format in, one PNG to open
+img-look before.png after.png                 # stacked, labelled, a red rule between
+img-look -crop 700,380,460,210 a.png b.png    # the same region of both
+img-look -max 0 -crop 0,0,64,64 icon.png      # native pixels, no scaling
+img-look -at '450,300 20,40' shot.png         # the numbers instead of the picture
+```
+
+The composite lands in the temporary directory — `%TEMP%\pixelita\look.png`,
+`/tmp/pixelita/look.png` — and the absolute path is printed, and repeated in
+`items[].output` under `-json`. Not the working directory: this produces
+something to glance at and forget, and a glance should not leave a file for
+`git status` to find later. `-out` puts it wherever you want it.
+
+The output is a PNG because that opens anywhere and can be handed to anything
+that reads images, and it is fitted to 1400px on the long side by default
+because an eight-megapixel photograph tells a reader nothing a tenth of it would
+not, at ten times the cost of looking. `-max 0` turns that off when the question
+is about individual pixels.
+
+Transparency is composited onto a checkerboard, because a convention that no
+photograph can imitate is the only kind that cannot be misread as content.
+Panels get the file name on a dark strip, so a label reads on a white image and
+a black one alike; `-across` lays them side by side for tall images, and
+`-label=false` removes the strip when it would cover the thing being examined.
+
+`-at` is the other half of looking. Reading a picture tells you something is
+wrong; reading the pixels tells you what:
+
+```
+img-look -at '450,300 20,40' screenshot.webp
+  450,300  rgba 255 255 255 255  #ffffff
+  20,40    rgba  38  41  40 255  #262928
+```
+
+Those four numbers are the ones that settled the colour-range investigation
+described above — with this tool it would have been one command rather than an
+afternoon.
 
 ## What will never be here
 

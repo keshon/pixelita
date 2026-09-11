@@ -1,6 +1,6 @@
 # pixelita
 
-Six command-line tools for images, in pure Go with no cgo. Build them with
+Seven command-line tools for images, in pure Go with no cgo. Build them with
 `go build -o bin/ ./cmd/...` — that is the only build step, and keeping it that
 way is a constraint rather than a convenience.
 
@@ -11,6 +11,11 @@ encoded, measured against the original, and written only when the gain clears
 `-min-gain` and the fidelity does not fall below `-min-psnr`. This is why the
 tools are safe to point at a directory, and it is the property to protect when
 changing anything.
+
+The two tools that answer questions rather than change files — `img-diff` and
+`img-look` — are what makes that rule checkable. When a change to an encoder
+needs verifying, measure with the first and look with the second; do not assert
+that output is correct without having done one of the two.
 
 ## Where code goes
 
@@ -32,6 +37,7 @@ a thin caller, with `-json` and `-dry-run` from the first commit.
 | `internal/resize` | Resampling in linear light with premultiplied alpha |
 | `internal/metric` | PSNR and SSIM |
 | `internal/imgio` | Decoding, encoding, and reading headers without decoding |
+| `internal/imgio/exif.go` | The one EXIF tag applied at decode: orientation |
 | `internal/cli` | Walking paths, spreading work across cores |
 
 ## Claims are measurements
@@ -65,6 +71,11 @@ is the whole claim.
 - **Metadata is never stripped** by an operation that promises not to change the
   picture. Dropping EXIF turns a photograph on its side; dropping an ICC profile
   changes the colours a browser paints.
+- **EXIF orientation is applied at decode**, not carried downstream. The tag
+  does not survive re-encoding and half the formats written here cannot hold it
+  at all, so the only honest place to honour it is the moment the pixels are
+  read. `ReadHeader` reports the turned size to match. `img-jpeg` is exempt
+  because it never decodes: the original tag is still in the file it writes.
 - **Binaries keep the `img-` prefix** whatever the repository is called. It
   groups them in PATH and it is what gets typed.
 - **The web interface is parked** on the `web-ui` branch until the CSS kit it is
