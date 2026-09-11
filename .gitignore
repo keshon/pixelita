@@ -1,5 +1,11 @@
 /bin/
 /.tools/
 *.exe
-/.claude/
+# Local session settings stay local, but the skill ships: it is the only thing
+# that tells a model these tools exist. A blind test proved the point — an agent
+# given a real image task reached for Python and hand-rolled its own metrics,
+# not because it judged our tools inferior but because nothing told it they were
+# there. A tool nobody is told about does not exist.
+/.claude/*
+!/.claude/skills/
 /tmp/
