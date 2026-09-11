@@ -1,55 +1,56 @@
 # pixelita
 
-Набор консольных инструментов для работы с картинками. Чистый Go, без cgo, без
-libwebp и libimagequant — собирается одной командой на любой машине.
+Command-line tools for images. Pure Go, no cgo, no libwebp and no
+libimagequant — one command builds them on any machine.
 
-Это не «ещё один конвертер». Отличается сочетание трёх свойств:
+Not another converter. What is different is the combination of three things:
 
-1. **Сначала измерь, потом трогай.** У каждого инструмента есть `-dry-run`,
-   который честно показывает результат, ничего не записывая. Ни один инструмент
-   не портит файл молча: если выигрыша нет — файл остаётся как был.
-2. **CLI — это API.** Каждый инструмент умеет `-json` с одной и той же схемой.
-   Веб-интерфейс, CI и ИИ-агент дёргают ровно те же бинарники, что и человек в
-   терминале. Ничего не умеет «только UI».
-3. **Числа, а не обещания.** Каждое утверждение ниже — воспроизводимый замер
-   против эталона, а не оценка на глаз.
+1. **Measure first, then touch.** Every tool has `-dry-run`, which reports the
+   result honestly and writes nothing. No tool spoils a file quietly: if there
+   is nothing to gain, the file is left exactly as it was.
+2. **The command line is the API.** Every tool speaks `-json` with one shared
+   schema, so a web interface, a CI job and an AI agent all drive the same
+   binaries a person drives from a terminal. Nothing is "UI only".
+3. **Numbers, not promises.** Every claim below is a reproducible measurement
+   against a reference tool rather than an impression.
 
-| Инструмент | Что делает |
+| Tool | What it does |
 |---|---|
-| [`img-scan`](cmd/img-scan) | смотрит, что лежит в папке, и **измеряет**, что даст каждый инструмент |
-| [`img-quant`](cmd/img-quant) | квантизация PNG в палитру |
-| [`img-webp`](cmd/img-webp) | PNG и JPEG → WebP |
-| [`img-jpeg`](cmd/img-jpeg) | сжатие JPEG **без потерь**, пиксели не меняются |
-| [`img-resize`](cmd/img-resize) | ресайз и наборы производных размеров |
-| [`img-diff`](cmd/img-diff) | сравнение двух картинок: PSNR, SSIM, карта различий |
+| [`img-scan`](cmd/img-scan) | looks at a folder and **measures** what each tool would save |
+| [`img-quant`](cmd/img-quant) | quantises a PNG to a palette |
+| [`img-webp`](cmd/img-webp) | PNG and JPEG → WebP |
+| [`img-jpeg`](cmd/img-jpeg) | shrinks a JPEG **losslessly**; not one pixel changes |
+| [`img-resize`](cmd/img-resize) | resizing, and sets of derived sizes |
+| [`img-diff`](cmd/img-diff) | compares two images: PSNR, SSIM, a difference map |
 
-Веб-интерфейс существует, но лежит в ветке `web-ui` и в набор пока не входит:
-CSS-кит, на котором он собран, ещё не устоялся.
+A web interface exists on the `web-ui` branch and is not part of the set yet:
+the CSS kit it is built on has not settled.
 
-## Сборка
+## Build
 
 ```bash
 go build -o bin/ ./cmd/...
 ```
 
-Вся работа живёт в [`internal/ops`](internal/ops). Каждая команда — это разбор
-флагов вокруг одной функции оттуда, и веб-интерфейс вызывает те же функции. Это
-превращает «интерфейс делает то же, что командная строка» из обещания в
-свойство кода: расходиться нечему, реализация одна.
+All the work lives in [`internal/ops`](internal/ops). Each command is a flag
+parser around one function there, and the web interface calls the same
+functions. That turns "the interface does what the command line does" from a
+promise into a property of the code: there is one implementation, so there is
+nothing to drift.
 
-## Обычный порядок работы
+## The usual order of work
 
 ```bash
-img-scan ./public/img                    # что тут есть и что можно выжать
-img-resize -max-width 1920 ./public/img  # ничего шире 1920
-img-jpeg ./public/img                    # бесплатные байты: картинка не меняется
-img-webp ./public/img                    # сконвертировать то, что окупается
-img-diff -min-psnr 35 ./src ./public/img # проверить, что не сломали
+img-scan ./public/img                    # what is here and what can be won
+img-resize -max-width 1920 ./public/img  # nothing wider than 1920
+img-jpeg ./public/img                    # free bytes: the picture does not change
+img-webp ./public/img                    # convert what pays off
+img-diff -min-psnr 35 ./src ./public/img # check that nothing broke
 ```
 
-## Контракт JSON
+## The JSON contract
 
-Любой инструмент с флагом `-json` выдаёт один объект одной и той же формы:
+Any tool given `-json` emits one object of the same shape:
 
 ```json
 {
@@ -74,21 +75,21 @@ img-diff -min-psnr 35 ./src ./public/img # проверить, что не сл�
 }
 ```
 
-`status` — одно из `done`, `would`, `skipped`, `failed`. Общие для всех
-инструментов числа лежат отдельными полями, всё специфичное — в `metrics`, чтобы
-схема не росла при каждом новом измерении. Пути всегда через `/`, на любой
-платформе. Код возврата: `0` — всё в порядке, `1` — были ошибки или
-непройденные пороги, `2` — неправильные аргументы.
+`status` is one of `done`, `would`, `skipped`, `failed`. Numbers common to every
+tool are named fields; anything tool-specific lives in `metrics`, so the schema
+does not grow a column every time a tool learns to measure something. Paths use
+forward slashes on every platform. Exit codes: `0` fine, `1` something failed or
+a threshold was missed, `2` the arguments were wrong.
 
 ---
 
 # img-scan
 
-Недостающая входная дверь. Запускать конвертер на папке и надеяться — плохой
-способ работать: часть файлов уже оптимальна, часть от конвертации распухнет, а
-вся выгода обычно сидит в меньшинстве файлов. `img-scan` отвечает на это до
-того, как что-то будет записано, — и не гадает по расширению, а **реально
-прогоняет кодировщики**.
+The missing front door. Running a converter over a folder and hoping is a poor
+way to work: some files are already optimal, some would grow, and the gain
+usually sits in a minority of them. `img-scan` answers that before anything is
+written — and it does not guess from file extensions, it **actually runs the
+encoders**.
 
 ```
 file                                        size format  type         pixels  colours best
@@ -99,7 +100,7 @@ photo-rpharm.png                    969.6 KB png     rgba      1999x1000   78220
 site_crm_about@1.png                170.7 KB png     palette    1643x946      256 webp -28% *
 ui-kanban5.png                      167.1 KB png     rgba       1920x948    14796 quant -69%
 ------------------------------------------------------------------------------------------------------
-would improve: 13, skipped: 0, failed: 0
+would be improved: 13, skipped: 0, failed: 0
 size: 5.6 MB -> 1.1 MB, saved 4.5 MB (80%)
 img-quant: 12 files, would save 3.9 MB
 img-webp:  13 files, would save 4.5 MB
@@ -107,259 +108,259 @@ metadata:  268 B in 6 files, dropped by any re-encode
 * img-webp leaves palette PNGs alone unless told otherwise: -skip-palette=false
 ```
 
-`-quick` читает только заголовки — это инвентаризация без замеров, мгновенно.
-Плюс к числу цветов означает, что гистограмма перестала считать точно: выше
-примерно ста тысяч цветов она разменивает точность на ограниченное время работы,
-и с этого момента может только недосчитать.
+`-quick` reads headers only — an inventory with no measuring, instantly. A plus
+on the colour count means the histogram stopped counting exactly: above roughly
+a hundred thousand colours it trades precision for a bounded run, and from then
+on it can only undercount.
 
 ---
 
 # img-quant
 
-Квантизация PNG: изображение сводится к палитре не больше 256 цветов, как это
-делает `pngquant`. Разница в том, что тут нет ни C, ни cgo.
+Quantisation: an image is reduced to a palette of at most 256 colours, the way
+`pngquant` does it. The difference is that there is no C and no cgo here.
 
-## Как это сделано
+## How it is built
 
-Тот же конвейер, к которому пришёл libimagequant, и по той же причине:
+The same pipeline libimagequant arrived at, for the same reasons:
 
-1. **Гистограмма.** Открытая адресация на плоских срезах, не `map`: у фотографии
-   бывают миллионы разных цветов. Полностью прозрачные пиксели схлопываются в
-   один — PNG-файлы полны прозрачных пикселей с мусорным RGB, и без этого
-   гистограмма врёт о том, сколько цветов в картинке на самом деле.
-2. **Медианный разрез.** Коробка с наибольшей ошибкой режется по оси наибольшей
-   дисперсии. Точка реза ищется сканированием, а не берётся по медиане: лишний
-   линейный проход ставит границу там, где цвета действительно расходятся.
-3. **k-means.** Палитра уточняется взвешенными итерациями Ллойда. Медианный
-   разрез ставит цвет в центр коробки, а коробка — это то, что нарезал алгоритм,
-   а не форма, которую имеют цвета внутри. **Именно этот шаг пропускают готовые
-   Go-библиотеки квантизации, и именно он даёт основную разницу в качестве.**
-4. **Ремап с адаптивным дизерингом.** Ошибка размазывается по соседям, но только
-   там, где палитра действительно промахнулась.
+1. **Histogram.** Open addressing over flat slices rather than a `map`: a
+   photograph can have millions of distinct colours. Fully transparent pixels
+   collapse into one — PNG files are full of transparent pixels carrying junk
+   RGB, and without this the histogram lies about how many colours the image
+   really has.
+2. **Median cut.** The box costing the most error is split along the axis of
+   greatest variance. The split point is found by scanning rather than taken at
+   the median: one extra linear pass puts the boundary where the colours
+   actually separate.
+3. **k-means.** The palette is refined with weighted Lloyd iterations. Median
+   cut puts a colour at the centre of a box, and a box is what the algorithm
+   carved out, not the shape the colours inside it have. **This is the step the
+   off-the-shelf Go quantisers skip, and it is the main difference in quality.**
+4. **Remap with adaptive dithering.** Error is diffused into the neighbours, but
+   only where the palette genuinely missed.
 
-## Почему дизеринг адаптивный
+## Why the dithering is adaptive
 
-Равномерный дизеринг на полной силе выглядит правильным и стоит очень дорого.
-В плоской заливке, цвет которой чуть-чуть не совпадает с записью палитры, он
-рисует её редкой сеткой из двух соседних цветов. Формально честно — а по факту
-длинный ряд одинаковых байт, который PNG хранит почти бесплатно, заменяется
-шумом, который не жмётся вообще.
+Uniform dithering at full strength looks correct and costs a great deal. In a
+flat area whose colour is a hair off a palette entry it renders that colour as a
+sparse grid of two neighbouring ones. Formally faithful — and in practice a long
+run of identical bytes, which PNG stores for almost nothing, is replaced by
+noise that does not compress at all.
 
-| Вариант | Размер | PSNR |
+| Variant | Size | PSNR |
 |---|---|---|
-| дизеринг равномерный | 2398 КБ | 44.6 дБ |
-| дизеринг адаптивный | **1576 КБ** | **44.6 дБ** |
+| uniform dithering | 2398 KB | 44.6 dB |
+| adaptive dithering | **1576 KB** | **44.6 dB** |
 
-Тот же PSNR за на треть меньший файл.
+The same PSNR for a third less file.
 
-## Сравнение с pngquant
+## Against pngquant
 
-Эталон — `pngquant 2.17.0`, официальная сборка. Набор — 12 полноцветных PNG из
-реального проекта (обложки, мокапы, скриншоты, фото с прозрачностью), 5.5 МБ.
-Обе программы на настройках по умолчанию, 256 цветов. PSNR считается одним и тем
-же кодом для обоих результатов.
+The reference is `pngquant 2.17.0`, the official build. The set is 12
+true-colour PNGs from a real project (covers, mockups, screenshots, photographs
+with transparency), 5.5 MB. Both programs on their defaults, 256 colours. PSNR
+is computed by the same code for both results.
 
-| | Размер | PSNR | Время |
+| | Size | PSNR | Time |
 |---|---|---|---|
-| img-quant | **1576 КБ** | **44.6 дБ** | 7.1 с |
-| pngquant 2.17 | 1908 КБ | 44.0 дБ | **4.6 с** |
+| img-quant | **1576 KB** | **44.6 dB** | 7.1 s |
+| pngquant 2.17 | 1908 KB | 44.0 dB | **4.6 s** |
 
-**−17% к размеру и +0.6 дБ к точности, при этом в 1.5 раза медленнее.** На 64
-цветах разрыв тот же: −22% и +0.7 дБ.
+**17% smaller and 0.6 dB more faithful, at 1.5x the time.** At 64 colours the
+gap is the same: −22% and +0.7 dB.
 
-Разрыв разложен по частям, чтобы не выдать случайность за победу. На уже
-палитровых PNG, где обе программы работают без потерь и меряется только запись
-PNG, Go проигрывает libpng **0.7%** — стандартный `compress/flate` тут
-практически не уступает zlib. С выключенным дизерингом у обоих остаётся чистое
-сравнение палитр: **−4% и +0.8 дБ** в нашу пользу.
+The gap is broken down rather than presented as a win. On already-palette PNGs,
+where both programs are lossless and only the PNG writing is measured, Go loses
+to libpng by **0.7%** — the standard `compress/flate` is barely behind zlib
+here. With dithering off on both sides, what is left is a clean comparison of
+the palettes: **−4% and +0.8 dB** in our favour.
 
-## Флаги
+## Flags
 
-| Флаг | По умолчанию | Что делает |
+| Flag | Default | What it does |
 |---|---|---|
-| `-colors` | `256` | максимальный размер палитры, 2–256 |
-| `-dither` | `1` | сила дизеринга Флойда-Стейнберга, `0` выключает |
-| `-effort` | `6` | 1–10, сколько времени тратить на уточнение палитры |
-| `-min-gain` | `10` | минимальный выигрыш в процентах |
-| `-min-psnr` | `30` | не записывать, если точность ниже, в дБ; `0` отключает |
-| `-replace` | `false` | перезаписать исходник вместо записи рядом |
-| `-suffix` | `-min` | суффикс имени выходного файла |
+| `-colors` | `256` | maximum palette size, 2–256 |
+| `-dither` | `1` | Floyd–Steinberg strength, `0` turns it off |
+| `-effort` | `6` | 1–10, how long to spend refining the palette |
+| `-min-gain` | `10` | minimum size reduction in percent |
+| `-min-psnr` | `30` | refuse to write below this fidelity in dB; `0` disables |
+| `-replace` | `false` | overwrite the source instead of writing beside it |
+| `-suffix` | `-min` | suffix for the output name |
 
 ---
 
 # img-jpeg
 
-Единственный инструмент в наборе, у которого нет настройки качества, — потому
-что терять нечего.
+The only tool in the set with no quality setting, because there is nothing to
+lose.
 
-JPEG хранит блоки квантованных коэффициентов, закодированные таблицами
-Хаффмана. Коэффициенты — это картинка; таблицы — только способ её записать.
-Большинство кодировщиков подставляют готовую пару таблиц из приложения к
-стандарту вместо таблиц, подогнанных под конкретное изображение. Подгонка
-ничего не стоит: коэффициенты переписываются один в один, поэтому декодированная
-картинка совпадает до последнего бита.
+A JPEG stores blocks of quantised coefficients entropy-coded with Huffman
+tables. The coefficients are the picture; the tables are only how it was written
+down. Most encoders ship the example pair from the standard's annex instead of
+tables fitted to the image in front of them. Fitting them costs nothing: the
+coefficients are copied across untouched, so the decoded image is identical to
+the last bit.
 
-Замер на 40 реальных JPEG из проекта, 20.9 МБ:
+Measured on 40 real JPEGs from a project, 20.9 MB:
 
 | | |
 |---|---|
-| Размер | 20.9 МБ → 18.7 МБ, **−10.5%** |
-| Изменённых пикселей | **0** |
-| Отдельные файлы | до −22% |
+| Size | 20.9 MB → 18.7 MB, **−10.5%** |
+| Pixels changed | **0** |
+| Individual files | up to −22% |
 
-Проверка встроена в тесты и устроена просто: оба файла декодируются и байты
-сравниваются. Любое расхождение — провал, а не «допустимая погрешность».
+The check is built into the tests and is simple: both files are decoded and the
+bytes compared. Any difference is a failure, not an acceptable tolerance.
 
-Метаданные сохраняются намеренно. Выбросить EXIF — значит положить фотографию на
-бок, выбросить ICC-профиль — изменить цвета, которые нарисует браузер. Ни то ни
-другое не место в операции, которая обещает не менять ничего.
+Metadata is kept deliberately. Dropping EXIF lays a photograph on its side;
+dropping an ICC profile changes the colours a browser paints. Neither belongs in
+an operation that promises to change nothing.
 
-Прогрессивные JPEG пропускаются: такой файл уже прошёл через кодировщик, которому
-было не всё равно.
+Progressive JPEGs are skipped: such a file has already been through an encoder
+that cared.
 
-| Флаг | По умолчанию | Что делает |
+| Flag | Default | What it does |
 |---|---|---|
-| `-min-gain` | `1` | минимальный выигрыш в процентах |
-| `-replace` | `false` | перезаписать исходник вместо записи рядом |
-| `-suffix` | `-min` | суффикс имени выходного файла |
+| `-min-gain` | `1` | minimum size reduction in percent |
+| `-replace` | `false` | overwrite the source instead of writing beside it |
+| `-suffix` | `-min` | suffix for the output name |
 
 ---
 
 # img-webp
 
-Конвертер PNG и JPEG в WebP, который не делает хуже. Обычные конвертеры
-переводят всё подряд, а картинка, уже пропущенная через квантизацию, в WebP на
-максимальном качестве часто становится **тяжелее** оригинала.
+A PNG and JPEG to WebP converter that does not make things worse. Ordinary
+converters convert everything, and an image that has already been through
+quantisation often comes out of WebP at maximum quality **heavier** than the
+original.
 
-`-skip-palette` включён по умолчанию не из осторожности, а по замерам:
+`-skip-palette` is on by default from measurement rather than caution:
 
-| Файл | PNG | WebP q100 | WebP q90 |
+| File | PNG | WebP q100 | WebP q90 |
 |---|---|---|---|
-| скриншот интерфейса 2528×1456 | 919 КБ | **1045 КБ** | 544 КБ |
-| скриншот интерфейса 2528×1456 | 275 КБ | **334 КБ** | 219 КБ |
+| interface screenshot 2528×1456 | 919 KB | **1045 KB** | 544 KB |
+| interface screenshot 2528×1456 | 275 KB | **334 KB** | 219 KB |
 
-Для полноцветных картинок картина обратная — там WebP выигрывает кратно, до
-−90%. Тип цвета читается из заголовка PNG, без декодирования картинки.
+For true-colour images the picture is the opposite — WebP wins several-fold,
+up to −90%. The colour type is read from the PNG header without decoding the
+image.
 
-| Флаг | По умолчанию | Что делает |
+| Flag | Default | What it does |
 |---|---|---|
-| `-quality` | `90` | качество для режима с потерями, 1–100 |
-| `-mode` | `lossy` | `lossy`, `lossless` или `near-lossless` |
-| `-skip-palette` | `true` | пропускать палитровые PNG |
-| `-min-gain` | `10` | минимальный выигрыш в процентах |
-| `-keep-original` | `true` | оставлять исходный файл рядом с `.webp` |
+| `-quality` | `90` | quality for the lossy mode, 1–100 |
+| `-mode` | `lossy` | `lossy`, `lossless` or `near-lossless` |
+| `-skip-palette` | `true` | skip palette PNGs |
+| `-min-gain` | `10` | minimum size reduction in percent |
+| `-keep-original` | `true` | keep the source file beside the `.webp` |
 
 ---
 
 # img-resize
 
-Ресайз **в линейном свете**. Это не тонкость: значения sRGB не пропорциональны
-свету, 128 — это не половина яркости от 255, а примерно пятая часть. Усреднение
-их напрямую темнит каждую картинку, заметнее всего там, где мелкая деталь
-чередует светлое и тёмное — тонкий текст, волосяные линии, листва.
+Resizing **in linear light**. This is not a subtlety: sRGB values are not
+proportional to light — 128 is not half the brightness of 255, it is about a
+fifth. Averaging them directly darkens every image it touches, most visibly
+where fine detail alternates light and dark: thin text, hairlines, foliage.
 
-Проверка, которая всё показывает: шахматка из чёрного и белого — это ровно
-половина света, а половина света в sRGB — это **188, а не 128**.
+The test that shows it: a black-and-white checkerboard is exactly half the
+light, and half the light in sRGB is **188, not 128**.
 
-| Ресемплер | Шахматка, уменьшенная вдвое |
+| Resampler | A checkerboard halved |
 |---|---|
-| наивный, в значениях sRGB | 128 — картинка потемнела |
-| **img-resize** | **188 — яркость сохранена** |
+| naive, in sRGB values | 128 — the image got darker |
+| **img-resize** | **188 — the brightness survived** |
 
-Альфа при этом премультиплицируется, иначе цвет полностью прозрачных пикселей
-затекает в видимый край рядом с ними. Оба свойства закрыты тестами.
+Alpha is premultiplied for the same class of reason: without it the colour of
+fully transparent pixels leaks into the visible edge beside them. Both
+properties are covered by tests.
 
 ```bash
-img-resize -max-width 1920 ./public/img            # только уменьшать, только слишком большие
+img-resize -max-width 1920 ./public/img            # shrink only, only what is too big
 img-resize -widths 320,640,1280 -out-dir dist hero.png
 img-resize -width 400 -height 400 -fit cover avatar.jpg
 ```
 
-| Флаг | По умолчанию | Что делает |
+| Flag | Default | What it does |
 |---|---|---|
-| `-width` / `-height` | `0` | размер; ноль — вывести из пропорций |
-| `-max-width` / `-max-height` | `0` | уменьшить то, что больше, остальное не трогать |
-| `-scale` | `0` | коэффициент, например `0.5` |
-| `-widths` | — | список ширин через запятую, набор производных |
-| `-fit` | `inside` | `inside`, `outside`, `cover` или `exact` |
+| `-width` / `-height` | `0` | the size; zero derives it from the aspect ratio |
+| `-max-width` / `-max-height` | `0` | shrink what is bigger, leave the rest alone |
+| `-scale` | `0` | a factor, for example `0.5` |
+| `-widths` | — | comma-separated widths, a set of derivatives |
+| `-fit` | `inside` | `inside`, `outside`, `cover` or `exact` |
 | `-filter` | `catmull-rom` | `nearest`, `box`, `triangle`, `catmull-rom`, `lanczos` |
-| `-allow-upscale` | `false` | разрешить увеличение |
-| `-format` | `keep` | `keep`, `png` или `jpeg` |
+| `-allow-upscale` | `false` | permit making an image larger |
+| `-format` | `keep` | `keep`, `png` or `jpeg` |
 
 ---
 
 # img-diff
 
-Инструмент, который держит остальные в честности. Каждая другая команда обещает
-не сделать хуже; эта — способ проверить обещание, человеком, в CI или агентом,
-проверяющим сам себя.
+The tool that keeps the others honest. Every other command promises not to make
+a file worse; this is how that promise is checked — by a person, by CI, or by an
+agent verifying its own work.
 
-Две метрики, потому что они расходятся полезным образом. PSNR — среднее
-квадратичной ошибки: объективно, сравнимо между инструментами и слепо к
-структуре. SSIM сравнивает локальные средние, дисперсии и ковариацию — ближе к
-тому, что замечает глаз, и ловит конверсию, которая набрала хороший балл и всё
-равно выглядит плохо.
+Two metrics, because they disagree usefully. PSNR is the mean squared error:
+objective, comparable between tools, and blind to structure. SSIM compares local
+means, variances and covariance — closer to what an eye notices, and it catches
+a conversion that scored well and still looks wrong.
 
 ```bash
-img-diff before.png after.png              # одна пара
-img-diff -out diff.png before.png after.png # плюс карта различий
-img-diff -min-psnr 35 ./src ./converted     # каталоги, код возврата 1 при провале
+img-diff before.png after.png               # one pair
+img-diff -out diff.png before.png after.png # plus a difference map
+img-diff -min-psnr 35 ./src ./converted     # directories; exit 1 on a failure
 ```
 
-Два каталога сопоставляются по имени без расширения — то есть папку PNG можно
-сразу проверить против сделанных из неё WebP.
+Two directories are paired by file name ignoring the extension, so a folder of
+PNGs can be checked directly against the WebP files made from it.
 
-## Что он нашёл в первый же запуск
+## What it found on its very first run
 
-Первый прогон дал по WebP 22–30 дБ там, где ожидалось 35–40, и — что важнее —
-**цифра не менялась от `-quality 75` до `-quality 100`**, хотя файл рос втрое.
-Постоянная ошибка, а не потери сжатия.
+The first run reported 22–30 dB for WebP where 35–40 was expected and — more
+tellingly — **the figure did not move between `-quality 75` and `-quality 100`**
+although the file tripled in size. A constant error, not compression loss.
 
-Оказалось: белый 255 возвращался как 237, тёмный 38 — как 48. Это в точности
-формула `16 + 219·v/255`, то есть студийный диапазон BT.601. Виноват оказался не
-кодировщик: Chrome декодирует те же файлы **байт в байт как исходник**. VP8
-хранит яркость в диапазоне 16–235, а `golang.org/x/image/webp` отдаёт кадр как
-`image.YCbCr`, у которого цветовая модель — полнодиапазонная JPEG-овская.
+It turned out that white 255 came back as 237 and dark 38 as 48. That is exactly
+`16 + 219·v/255`, the studio range of BT.601. The encoder was not at fault:
+Chrome decodes the same files **byte for byte identically to the source**. VP8
+keeps luma between 16 and 235, while `golang.org/x/image/webp` hands the frame
+back as an `image.YCbCr`, whose colour model is the full-range JPEG one.
 
-То есть файлы были в порядке, а врал измерительный тракт. Починено в
-[`internal/imgio`](internal/imgio/imgio.go) собственным преобразованием по
-коэффициентам VP8 и закрыто регрессионным тестом. Заодно это чинит все
-инструменты сразу: любое чтение lossy WebP шло через тот же путь.
+So the files were right and the measuring was wrong. Fixed in
+[`internal/imgio`](internal/imgio/imgio.go) with a conversion using VP8's own
+coefficients, and covered by a regression test. It fixed every tool at once:
+any read of a lossy WebP went through the same path.
 
-После починки — то, чего и ждёшь от WebP q90:
+After the fix, what one expects of WebP q90:
 
 | | PSNR | SSIM |
 |---|---|---|
-| до починки | 22–30 дБ | 0.95–0.99 |
-| после | **33–44 дБ** | **0.99+** |
+| before the fix | 22–30 dB | 0.95–0.99 |
+| after | **33–44 dB** | **0.99+** |
 
-Это и есть аргумент в пользу отдельного верификатора: без него мы бы никогда не
-узнали, что наши собственные числа врут.
+This is the argument for a separate verifier: without it we would never have
+learnt that our own numbers were lying.
 
 ---
 
-## Чего здесь не будет
+## What will never be here
 
-AVIF и JPEG XL. Пригодного к бою кодировщика на чистом Go для них нет, а cgo
-ломает саму посылку «собирается одной командой на любой машине». Лучше сказать
-сразу, чем пообещать и упереться.
+AVIF and JPEG XL. There is no pure-Go encoder for them fit for use, and cgo
+breaks the premise that one command builds this on any machine. Better to say so
+than to promise and then hit the wall.
 
-## Что дальше
+## On quality in Go
 
-Ближайшие кандидаты, примерно в порядке пользы: оптимизация JPEG без потерь
-(пересборка Хаффмана и прогрессивная развёртка — 5–20% бесплатно, пиксели не
-трогаются), автообрезка прозрачных полей, поиск дублей по перцептивному хешу,
-плейсхолдеры ThumbHash, извлечение палитры, контактный лист, генератор наборов
-иконок. И веб-интерфейс поверх всего этого — тонкий, читающий `-json`, без
-собственной логики.
+The language has nothing to do with it. Quality is decided by the algorithm.
+What is true is that the off-the-shelf Go quantisers (`go-quantize`,
+`soniakeys/quant`, `esimov/colorquant`) are noticeably weaker, because they are
+plain median cut or NeuQuant with no palette refinement and often no dithering.
+You cannot take one off the shelf and get pngquant. You can write your own,
+which is what happened here.
 
-## Про качество на Go
+The one place C is genuinely ahead is speed: without SIMD the heavy float loops
+run one and a half to two times slower. That costs time, not quality.
 
-Язык тут ни при чём. Качество определяется алгоритмом. Что правда — готовые
-Go-библиотеки квантизации (`go-quantize`, `soniakeys/quant`, `esimov/colorquant`)
-заметно слабее, потому что это чистый медианный разрез или NeuQuant без
-уточнения палитры и часто без дизеринга. Взять такую с полки и получить pngquant
-нельзя. Написать свою реализацию — можно, что и сделано.
+## License
 
-Единственное, где C объективно впереди — скорость: без SIMD тяжёлые float-циклы
-идут в полтора-два раза медленнее. На качество это не влияет, только на время.
+MIT.
