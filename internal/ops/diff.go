@@ -1,0 +1,104 @@
+package ops
+
+import (
+	"fmt"
+	"image"
+	"math"
+	"os"
+	"path/filepath"
+
+	"github.com/keshon/pixelita/internal/imgio"
+	"github.com/keshon/pixelita/internal/metric"
+	"github.com/keshon/pixelita/internal/report"
+)
+
+type DiffOptions struct {
+	Out     string // where to write the difference map, empty for none
+	Amplify float64
+	MinPSNR float64
+	MinSSIM float64
+}
+
+func DefaultDiff() DiffOptions { return DiffOptions{Amplify: 8} }
+
+// Diff measures how far b is from a.
+func Diff(a, b string, o DiffOptions) report.Item {
+	item := report.Item{Path: a, Output: b, Metrics: map[string]any{}}
+
+	imgA, _, rawA, err := imgio.Load(a)
+	if err != nil {
+		return fail(item, err, "decode error")
+	}
+	imgB, _, rawB, err := imgio.Load(b)
+	if err != nil {
+		return fail(item, err, "decode error")
+	}
+	item.BytesBefore = int64(len(rawA))
+	item.BytesAfter = int64(len(rawB))
+	item.GainPercent = gain(item.BytesBefore, item.BytesAfter)
+
+	res, err := metric.Compare(imgA, imgB)
+	if err != nil {
+		ab, bb := imgA.Bounds(), imgB.Bounds()
+		return fail(item, fmt.Errorf("%w: %dx%d and %dx%d", err,
+			ab.Dx(), ab.Dy(), bb.Dx(), bb.Dy()), "size mismatch")
+	}
+
+	if !math.IsInf(res.PSNR, 1) {
+		item.Metrics["psnr"] = res.PSNR
+		item.Metrics["psnrAlpha"] = res.PSNRAlpha
+	}
+	item.Metrics["ssim"] = res.SSIM
+	item.Metrics["maxDelta"] = res.MaxDelta
+	item.Metrics["differentPercent"] = res.Different
+	item.Metrics["pixels"] = res.Pixels
+
+	if o.Out != "" {
+		if err := writeDiffMap(imgA, imgB, o); err != nil {
+			return fail(item, err, "diff map error")
+		}
+	}
+
+	switch {
+	case o.MinPSNR > 0 && res.PSNR < o.MinPSNR:
+		item.Status = report.StatusFailed
+		item.Reason = fmt.Sprintf("below %.0f dB", o.MinPSNR)
+	case o.MinSSIM > 0 && res.SSIM < o.MinSSIM:
+		item.Status = report.StatusFailed
+		item.Reason = fmt.Sprintf("below %.3f ssim", o.MinSSIM)
+	default:
+		item.Status = report.StatusDone
+	}
+	return item
+}
+
+// DiffMap renders the difference, brightened so that errors too small to see
+// side by side become obvious. Black means the two images agree.
+func DiffMap(a, b image.Image, amplify float64) *image.NRGBA {
+	x, y := imgio.ToNRGBA(a), imgio.ToNRGBA(b)
+	out := image.NewNRGBA(x.Rect)
+	for i := 0; i < len(x.Pix) && i < len(y.Pix); i += 4 {
+		for c := 0; c < 3; c++ {
+			d := int(x.Pix[i+c]) - int(y.Pix[i+c])
+			if d < 0 {
+				d = -d
+			}
+			out.Pix[i+c] = uint8(math.Min(float64(d)*amplify, 255))
+		}
+		out.Pix[i+3] = 255
+	}
+	return out
+}
+
+func writeDiffMap(a, b image.Image, o DiffOptions) error {
+	data, err := imgio.EncodePNG(DiffMap(a, b, o.Amplify))
+	if err != nil {
+		return err
+	}
+	if dir := filepath.Dir(o.Out); dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+	}
+	return os.WriteFile(o.Out, data, 0o644)
+}

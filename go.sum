@@ -1,0 +1,4 @@
+github.com/mayahiro/go-webp v0.3.0 h1:grXwlPkMZMcmEn3YnOS1hQZusw+qDToKnpf4geCZcJw=
+github.com/mayahiro/go-webp v0.3.0/go.mod h1:6zvjJiJb31kol2F4pyjcdoFWvUXz6xip1avcWAZ4pfs=
+golang.org/x/image v0.45.0 h1:FMb1nTbH5H9vF55SriQHgFw5GnNL9Jg6L25BwXKzhB0=
+golang.org/x/image v0.45.0/go.mod h1:n62x/7RqlwXDvGsSU4u6IUTUf6KghUZ9Bt7cG/T9Fx4=
