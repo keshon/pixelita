@@ -41,6 +41,24 @@ nothing to drift.
 
 ## The usual order of work
 
+It also measures what the files would cost at the widths they might actually be
+shown at, because the codec is often the smaller question:
+
+```
+img-webp:  7 files, would save 2.6 MB
+at  640px:  177.6 KB for the whole set (95%), 7 files are wider than that
+at 1280px:  446.4 KB for the whole set (87%), 7 files are wider than that
+at 1920px:  802.4 KB for the whole set (76%), 7 files are wider than that
+```
+
+Converting that folder saves 83%. Serving telephones something built for
+telephones saves 95%, and the scan used to be silent about it — a real audit
+found the larger win by eye, not from any tool. The widths come from `-widths`
+and are printed with the result, because how wide an image needs to be is a
+fact about a layout and not about a file: two thousand pixels are excessive for
+a landing page and unremarkable for a print source. Each figure is a real resize
+and a real encode, not a projection.
+
 ```bash
 img-scan ./public/img                    # what is here and what can be won
 img-resize -max-width 1920 ./public/img  # nothing wider than 1920

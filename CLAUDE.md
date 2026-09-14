@@ -44,7 +44,19 @@ toolkit to find out what had changed, so the chunks are named.
 **A flag that does not survive measurement does not ship.** `-flattest` was
 written, measured against a real photograph, found to point at the wrong half of
 the frame, and deleted in favour of `-by levels`. The reasoning is kept in
-`internal/ops/worst.go` so it is not attempted again.
+`internal/ops/worst.go` so it is not attempted again. `img-scan -widths` went the
+same way in miniature: it began as one threshold, measured 17 KB on the folder
+that had motivated it, and became a curve — a threshold is a guess about someone
+else's layout, and a small guess reads as "not worth it".
+
+**Ask what question the tool is answering, not whether it answers it well.**
+`img-scan` reported correctly that WebP would save 83% on a folder and said
+nothing about every file being twice as wide as anything would display it, which
+was worth 95%. `metadataBytes` weighed the metadata and would not name it, so a
+reader went outside the toolkit to find out what had changed. Both were accurate
+and both answered something narrower than what was asked. That failure does not
+show up as a wrong number, which is why it survives review; it shows up as a
+person doing by hand the part the tool left out.
 
 The two tools that answer questions rather than change files — `img-diff` and
 `img-look` — are what makes that rule checkable. When a change to an encoder

@@ -13,6 +13,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/keshon/pixelita/internal/cli"
 	"github.com/keshon/pixelita/internal/imgio"
@@ -23,6 +25,7 @@ import (
 func main() {
 	opt := ops.DefaultScan()
 	var verbose, asJSON bool
+	var widthSpec string
 	var showVersion bool
 	var jobs int
 	var listFile string
@@ -38,6 +41,10 @@ func main() {
 		"do not recommend a conversion below this fidelity, in dB")
 	flag.BoolVar(&verbose, "v", false, "list files with nothing to gain too")
 	flag.BoolVar(&showVersion, "version", false, "print which build this is and exit")
+	flag.StringVar(&widthSpec, "widths", "640,1280,1920",
+		"widths these images might be shown at; anything wider is measured at "+
+			"each of them, so the cost of serving a size is a fact rather than a guess. "+
+			"empty turns the check off")
 	flag.BoolVar(&asJSON, "json", false, "emit the report as JSON")
 	flag.IntVar(&jobs, "jobs", 0, "parallel workers, 0 means one per CPU core")
 	flag.StringVar(&listFile, "from-file", "", "read paths from a file, one per line")
@@ -52,6 +59,20 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  img-scan -json ./public/img > report.json\n")
 	}
 	flag.Parse()
+
+	opt.DisplayWidths = nil
+	for _, f := range strings.Split(widthSpec, ",") {
+		f = strings.TrimSpace(f)
+		if f == "" {
+			continue
+		}
+		w, err := strconv.Atoi(f)
+		if err != nil || w <= 0 {
+			fmt.Fprintf(os.Stderr, "error: -widths takes positive numbers, got %q\n", f)
+			os.Exit(2)
+		}
+		opt.DisplayWidths = append(opt.DisplayWidths, w)
+	}
 
 	if showVersion {
 		cli.Version(os.Stdout, "img-scan")

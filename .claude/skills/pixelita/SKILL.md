@@ -135,6 +135,21 @@ path is repeated in `items[].output` under `-json`.
 command: it runs the encoders and reports what each would actually save, naming
 the winner in `metrics.best`. `-quick` reads headers only and is instant.
 
+**Read the per-width lines before proposing a codec.** The scan also measures
+what the set would cost at 640, 1280 and 1920 pixels (`-widths` changes them,
+`metrics.atWidth` carries them per file):
+
+```
+img-webp:  7 files, would save 2.6 MB
+at  640px:  177.6 KB for the whole set (95%), 7 files are wider than that
+```
+
+Converting saves 83%; serving phones a phone-sized image saves 95%. Dimensions
+are usually the bigger lever and the one people forget. When you act on it,
+resize from the **originals** rather than from files you have already converted,
+or the losses compound — and say that the page needs `srcset`, because without
+it the browser takes the largest one and the mobile win never happens.
+
 For judging someone else's file, `img-scan -quick -json` also gives:
 
 - `paletteSize` — how many entries a palette PNG really carries. Do not infer it
