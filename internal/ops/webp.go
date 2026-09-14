@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	webp "github.com/mayahiro/go-webp"
 
@@ -18,6 +19,11 @@ type WebPOptions struct {
 	MinGain      float64
 	DryRun       bool
 	KeepOriginal bool
+	// OutDir is the same flag img-resize has. Its absence here cost a reader
+	// thirty-four megabytes of copying to get a result into a scratch
+	// directory: a set of tools whose flags differ between them makes people
+	// guess, and guessing costs more than the flag does.
+	OutDir string
 }
 
 func DefaultWebP() WebPOptions {
@@ -105,6 +111,12 @@ func WebP(path string, o WebPOptions) report.Item {
 	}
 
 	item.Output = sibling(path, "", ".webp")
+	if o.OutDir != "" {
+		if err := os.MkdirAll(o.OutDir, 0o755); err != nil {
+			return fail(item, err, "output directory")
+		}
+		item.Output = filepath.Join(o.OutDir, filepath.Base(item.Output))
+	}
 	if o.DryRun {
 		item.Status = report.StatusWould
 		return item

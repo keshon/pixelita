@@ -195,10 +195,15 @@ var pngColourNames = map[byte]string{
 
 // Header is what a file says about itself before anything is decoded.
 type Header struct {
-	Format      string
-	Width       int
-	Height      int
-	BitDepth    int
+	Format   string
+	Width    int
+	Height   int
+	BitDepth int
+	// Palette is how many entries a palette PNG actually carries. Colour type
+	// alone says a palette is in use; it does not say whether the encoder spent
+	// 256 entries or 64, and that difference is the whole story when judging
+	// what a quantiser did to a file.
+	Palette     int
 	ColourType  string
 	HasAlpha    bool
 	Interlaced  bool
@@ -254,6 +259,9 @@ func pngHeader(raw []byte) (Header, error) {
 		case "IHDR", "PLTE", "IDAT", "IEND", "tRNS":
 		default:
 			h.Ancillary += int64(size + 12)
+		}
+		if name == "PLTE" {
+			h.Palette = size / 3 // three bytes an entry, by the specification
 		}
 		if name == "tRNS" {
 			h.HasAlpha = true

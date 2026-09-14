@@ -45,6 +45,13 @@ func Scan(path string, o ScanOptions) report.Item {
 	item.Metrics["width"] = head.Width
 	item.Metrics["height"] = head.Height
 	item.Metrics["colourType"] = head.ColourType
+	// "palette" says a palette is in use; only this says how big it is, which
+	// is the difference between a file quantised to 256 colours and one
+	// quantised to 64. A reader judging what an encoder did needs the number,
+	// and inferring it from the bit depth gives the ceiling, not the answer.
+	if head.Palette > 0 {
+		item.Metrics["paletteSize"] = head.Palette
+	}
 	item.Metrics["bitDepth"] = head.BitDepth
 	item.Metrics["hasAlpha"] = head.HasAlpha
 	item.Metrics["size"] = fmt.Sprintf("%dx%d", head.Width, head.Height)
@@ -59,8 +66,11 @@ func Scan(path string, o ScanOptions) report.Item {
 	}
 
 	if o.Quick {
+		// Worded so it does not read as a fault. -quick is asked for, and
+		// "skipped: not measured" looks like something went wrong with a file
+		// that is in fact perfectly fine — it just was not encoded.
 		item.Status = report.StatusSkipped
-		item.Reason = "not measured"
+		item.Reason = "headers only"
 		return item
 	}
 
@@ -75,6 +85,14 @@ func Scan(path string, o ScanOptions) report.Item {
 		q := quant.Quantize(img, quant.Options{MaxColors: o.Colors, Dither: 1, Effort: o.Effort})
 		item.Metrics["colours"] = q.Distinct
 		item.Metrics["coloursExact"] = q.DistinctExact
+		if !q.DistinctExact {
+			// Named so it cannot be read as the answer. A field called
+			// "colours" sitting next to a separate "coloursExact: false" was
+			// quoted to five significant digits by a reader who missed the
+			// flag; a name that carries the caveat cannot be misread that way.
+			item.Metrics["coloursAtLeast"] = q.Distinct
+			delete(item.Metrics, "colours")
+		}
 		if encoded, err := imgio.EncodePalettedPNG(q.Image); err == nil {
 			item.Metrics["quantBytes"] = int64(len(encoded))
 			item.Metrics["quantGain"] = gain(item.BytesBefore, int64(len(encoded)))

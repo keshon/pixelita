@@ -34,9 +34,15 @@ func Diff(a, b string, o DiffOptions) report.Item {
 	if err != nil {
 		return fail(item, err, "decode error")
 	}
-	item.BytesBefore = int64(len(rawA))
-	item.BytesAfter = int64(len(rawB))
-	item.GainPercent = gain(item.BytesBefore, item.BytesAfter)
+	// Only when the whole file is the subject. Measuring one region and
+	// printing "saved 69%" next to it describes a different thing entirely, and
+	// in an audit of someone else's file it frames the work wrongly as well:
+	// nothing was converted here, something was checked.
+	if o.Crop.Empty() {
+		item.BytesBefore = int64(len(rawA))
+		item.BytesAfter = int64(len(rawB))
+		item.GainPercent = gain(item.BytesBefore, item.BytesAfter)
+	}
 
 	// A whole-image average answers "is it broken" and hides where. Quantisers
 	// and encoders do not spread their error evenly: on one photograph measured
@@ -57,8 +63,7 @@ func Diff(a, b string, o DiffOptions) report.Item {
 			return fail(item, err, "crop outside image")
 		}
 		imgA, imgB = ca, cb
-		item.Metrics["crop"] = fmt.Sprintf("%dx%d at %d,%d",
-			o.Crop.Dx(), o.Crop.Dy(), o.Crop.Min.X, o.Crop.Min.Y)
+		item.Metrics["crop"] = Rect(o.Crop)
 	}
 
 	res, err := metric.Compare(imgA, imgB)
@@ -74,6 +79,8 @@ func Diff(a, b string, o DiffOptions) report.Item {
 	}
 	item.Metrics["ssim"] = res.SSIM
 	item.Metrics["maxDelta"] = res.MaxDelta
+	item.Metrics["p95"] = res.P95
+	item.Metrics["p99"] = res.P99
 	item.Metrics["differentPercent"] = res.Different
 	item.Metrics["pixels"] = res.Pixels
 

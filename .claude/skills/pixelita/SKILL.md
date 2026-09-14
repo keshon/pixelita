@@ -94,6 +94,15 @@ img-scan -quick ./public/img       # headers only; an inventory, instant
 img-scan -json ./public/img        # the same, machine-readable
 ```
 
+When judging a file someone else produced, `img-scan -json` also reports
+`paletteSize` — how many entries a palette PNG actually carries. Do not infer it
+from the colour type or the bit depth; those give the ceiling, and "256 colours"
+inferred when the truth is 64 is a claim you cannot support.
+
+Watch for `coloursAtLeast` rather than `colours` in the JSON: on a rich image
+the count stops early, and the field is named that way so the number cannot be
+quoted as exact. Say "on the order of a hundred thousand", not the digits.
+
 Read the summary before proposing anything. A folder is usually a minority of
 files carrying most of the weight, plus a tail that is already optimal and would
 only grow.
@@ -118,12 +127,33 @@ img-diff -out diff.png a.png b.png        # a difference map, brightened
 img-diff -crop 4500,1300,500,250 a.png b.png   # only that region
 ```
 
-`-crop` takes the same rectangle as `img-look`, so looking at a region and
-measuring it are the same gesture. Use it whenever a single number looks fine
-but something still seems off: encoders do not spread their error evenly, and a
-whole-image average hides exactly where the damage is. The reliable method is
-`-out diff.png`, look at the map to find the bright areas, then `-crop` those
-coordinates to get the number.
+**Start with `-worst` when the question is "where".** It divides the image into
+tiles, measures each, and prints the most damaged ones in the exact spelling
+`-crop` takes:
+
+```bash
+img-diff -worst 5 original.png compressed.png
+  region (x,y,w,h)        psnr   ssim worst  p95/p99
+  1280,2816,256,256    30.0 dB  0.693    35    16/19
+```
+
+Then paste a region straight into the next two commands — no arithmetic, no
+reading coordinates off a scaled-down picture:
+
+```bash
+img-diff -crop 1280,2816,256,256 original.png compressed.png   # the number
+img-look -crop 1280,2816,256,256 -zoom 3 original.png compressed.png   # the picture
+```
+
+Do not find regions by eye off a difference map and scale the coordinates back
+up by hand. That is arithmetic, it is done wrong, and `-worst` exists because it
+was being done at all — twice, by readers who both then picked regions markedly
+better than the real worst.
+
+`p95/p99` is the error 95% and 99% of pixels stay under. Read it next to
+`worst`: `worst 92, p95/p99 18/25` is one stray pixel, while `worst 35, p95/p99
+16/19` is damage spread across the region. A maximum on its own cannot tell you
+which you have.
 
 ## Which tool for what
 

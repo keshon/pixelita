@@ -35,6 +35,8 @@ func main() {
 	flag.BoolVar(&opt.KeepOriginal, "keep-original", opt.KeepOriginal,
 		"keep the source file next to the .webp")
 	flag.BoolVar(&verbose, "v", false, "list skipped files too")
+	flag.StringVar(&opt.OutDir, "out-dir", "",
+		"write results here instead of next to the source")
 	flag.BoolVar(&asJSON, "json", false, "emit the report as JSON")
 	flag.IntVar(&jobs, "jobs", 0, "parallel encoders, 0 means one per CPU core")
 	flag.StringVar(&listFile, "from-file", "",

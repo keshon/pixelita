@@ -33,7 +33,8 @@ func main() {
 		"also report the mean colour and luma range of what is shown")
 	flag.BoolVar(&opt.Label, "label", opt.Label, "write the file name on each panel")
 	flag.StringVar(&opt.Out, "out", opt.Out,
-		"where to write the result; the default is "+ops.LookPath())
+		"where to write the result; the default is a name derived from the "+
+			"inputs, under "+ops.LookDir())
 	flag.StringVar(&atSpec, "at", "",
 		"print the pixels at these points instead of writing an image, as x,y x,y")
 	flag.BoolVar(&asJSON, "json", false, "emit the report as JSON")
@@ -108,6 +109,10 @@ func main() {
 		os.Exit(2)
 	}
 
+	if opt.Out == "" {
+		opt.Out = ops.LookPath(flag.Args(), opt)
+	}
+
 	img, items, err := ops.Look(flag.Args(), opt)
 	rep := report.New("img-look", "shown", false)
 	for _, it := range items {
@@ -149,7 +154,7 @@ var columns = []report.Column{
 	}},
 	{Title: "from", Width: 12, Right: true, Value: func(i report.Item) string { return i.Str("from") }},
 	{Title: "shown", Width: 12, Right: true, Value: func(i report.Item) string { return i.Str("to") }},
-	{Title: "crop", Width: 20, Value: func(i report.Item) string { return i.Str("crop") }},
+	{Title: "region", Width: 20, Value: func(i report.Item) string { return i.Str("crop") }},
 	{Title: "mean", Width: 8, Value: func(i report.Item) string { return i.Str("mean") }},
 	{Title: "luma", Width: 9, Right: true, Value: func(i report.Item) string {
 		if v, ok := i.Metrics["luma"].([]int); ok && len(v) == 2 {

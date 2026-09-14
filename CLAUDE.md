@@ -15,7 +15,19 @@ changing anything.
 `-crop` means the same rectangle in `img-look` and `img-diff` on purpose: the
 unit of this work is a region, not a file, and looking at one and measuring it
 should not require restating it. Anything else that learns to work on part of an
-image takes the same flag with the same `x,y,w,h` spelling.
+image takes the same flag with the same `x,y,w,h` spelling, and anything that
+*reports* a region prints it in that spelling too — `img-diff -worst` exists so
+coordinates are pasted rather than transcribed, and a test pins `Rect` and
+`ParseRect` to each other so the two can never drift apart.
+
+The tools are used by models as much as by people, and where that changes a
+decision it is written down beside the code. Blind tests are how that gets
+found: give an agent a real task with no hint about tooling and watch what it
+does. Both such tests so far paid for themselves — the first proved a skill that
+never reached the model, the second produced a list of seven frictions, every
+one of them real. A wrong number a tool invites is the tool's defect, not the
+reader's: `colours` sitting beside `coloursExact: false` was quoted to five
+digits, so the field is now called `coloursAtLeast` when it is one.
 
 The two tools that answer questions rather than change files — `img-diff` and
 `img-look` — are what makes that rule checkable. When a change to an encoder

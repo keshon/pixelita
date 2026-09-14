@@ -21,6 +21,7 @@ import (
 func main() {
 	opt := ops.DefaultDiff()
 	var out, cropSpec string
+	var worst, tile int
 	var verbose, asJSON bool
 	var jobs int
 
@@ -28,6 +29,9 @@ func main() {
 		"write difference maps here: a file for one pair, a directory for many")
 	flag.StringVar(&cropSpec, "crop", "",
 		"measure only this region of both, as x,y,w,h; the same rectangle img-look takes")
+	flag.IntVar(&worst, "worst", 0,
+		"instead of one figure, find the N most damaged regions and print where they are")
+	flag.IntVar(&tile, "tile", 256, "region size in pixels for -worst")
 	flag.Float64Var(&opt.Amplify, "amplify", opt.Amplify, "how much to brighten the difference map")
 	flag.Float64Var(&opt.MinPSNR, "min-psnr", 0, "fail below this PSNR in dB, 0 disables")
 	flag.Float64Var(&opt.MinSSIM, "min-ssim", 0, "fail below this SSIM, 0 disables")
@@ -53,6 +57,30 @@ func main() {
 	if opt.Crop, err = ops.ParseRect(cropSpec); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(2)
+	}
+
+	// -worst answers a different question and takes a different route: not
+	// "how far apart are these" but "where". It is deliberately a search rather
+	// than something to eyeball off a difference map, because reading
+	// coordinates off a scaled-down picture and scaling them back by hand is
+	// arithmetic, and arithmetic done by eye is arithmetic done wrong.
+	if worst > 0 {
+		if flag.NArg() != 2 {
+			flag.Usage()
+			os.Exit(2)
+		}
+		items, err := ops.WorstRegions(flag.Arg(0), flag.Arg(1), worst, tile)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		rep := report.New("img-diff", "regions", false)
+		for _, it := range items {
+			rep.Add(it)
+		}
+		rep.Note("worst first; paste a region into -crop to measure it, " +
+			"or into img-look -crop to see it")
+		os.Exit(rep.Emit(os.Stdout, regionColumns, asJSON, verbose))
 	}
 
 	if flag.NArg() != 2 {
@@ -81,7 +109,11 @@ func main() {
 	for _, it := range items {
 		rep.Add(it)
 	}
-	os.Exit(rep.Emit(os.Stdout, columns, asJSON, verbose))
+	shape := columns
+	if !opt.Crop.Empty() {
+		shape = cropColumns
+	}
+	os.Exit(rep.Emit(os.Stdout, shape, asJSON, verbose))
 }
 
 type pair struct{ a, b string }
@@ -135,6 +167,49 @@ func stem(p string) string {
 	return strings.TrimSuffix(base, filepath.Ext(base))
 }
 
+// regionColumns is its own set rather than a slice of the one below. A region
+// row has no file size, and three columns of dashes would be noise where the
+// whole point is that one rectangle and one number read at a glance.
+var regionColumns = append([]report.Column{
+	{Title: "region (x,y,w,h)", Width: 22, Value: func(i report.Item) string { return i.Str("crop") }},
+}, measureColumns...)
+
+// cropColumns is the same idea for a single named region: the file still needs
+// naming, its size does not, because the size is not what was measured.
+var cropColumns = append([]report.Column{
+	{Title: "file", Width: 40, Value: func(i report.Item) string { return i.Path }},
+	{Title: "region (x,y,w,h)", Width: 22, Value: func(i report.Item) string { return i.Str("crop") }},
+}, measureColumns...)
+
+var measureColumns = []report.Column{
+	{Title: "psnr", Width: 8, Right: true, Value: func(i report.Item) string {
+		if v, ok := i.Num("psnr"); ok {
+			return fmt.Sprintf("%.1f dB", v)
+		}
+		return "identical"
+	}},
+	{Title: "ssim", Width: 6, Right: true, Value: func(i report.Item) string {
+		if v, ok := i.Num("ssim"); ok {
+			return fmt.Sprintf("%.3f", v)
+		}
+		return ""
+	}},
+	{Title: "worst", Width: 5, Right: true, Value: func(i report.Item) string {
+		if v, ok := i.Num("maxDelta"); ok {
+			return fmt.Sprintf("%.0f", v)
+		}
+		return ""
+	}},
+	{Title: "p95/p99", Width: 8, Right: true, Value: func(i report.Item) string {
+		p95, ok1 := i.Num("p95")
+		p99, ok2 := i.Num("p99")
+		if !ok1 || !ok2 {
+			return ""
+		}
+		return fmt.Sprintf("%.0f/%.0f", p95, p99)
+	}},
+}
+
 var columns = []report.Column{
 	{Title: "file", Width: 40, Value: func(i report.Item) string { return i.Path }},
 	{Title: "a", Width: 10, Right: true, Value: func(i report.Item) string { return report.Size(i.BytesBefore) }},
@@ -162,6 +237,17 @@ var columns = []report.Column{
 			return fmt.Sprintf("%.0f", v)
 		}
 		return ""
+	}},
+	// Beside the worst single pixel, the error nearly every pixel stays under.
+	// One number without the other cannot separate a stray outlier from a shift
+	// across a large part of the frame.
+	{Title: "p95/p99", Width: 8, Right: true, Value: func(i report.Item) string {
+		p95, ok1 := i.Num("p95")
+		p99, ok2 := i.Num("p99")
+		if !ok1 || !ok2 {
+			return ""
+		}
+		return fmt.Sprintf("%.0f/%.0f", p95, p99)
 	}},
 	// Shown whenever a crop is in force. A PSNR figure means something quite
 	// different for one corner of an image than for the whole of it, and a

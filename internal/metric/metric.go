@@ -22,6 +22,12 @@ type Result struct {
 	PSNRAlpha float64 // dB, counting alpha via black and white backgrounds
 	SSIM      float64 // 0..1
 	MaxDelta  int     // largest single-channel difference, 0..255
+	// P95 and P99 are the per-pixel error that 95% and 99% of pixels stay
+	// under. MaxDelta alone cannot tell a single stray pixel from a systemic
+	// shift across a tenth of the frame, and those two call for very different
+	// answers — the first is noise, the second is damage.
+	P95       int
+	P99       int
 	Different float64 // percent of pixels that differ at all
 	Pixels    int
 }
@@ -43,7 +49,11 @@ func Compare(a, b image.Image) (Result, error) {
 	var sum, sumAlpha float64
 	var differing int
 	maxDelta := 0
+	// One bucket per possible per-pixel error. Cheaper and more honest than
+	// keeping every value: the answer wanted is a percentile, not a list.
+	var hist [256]int
 	for i := 0; i < len(x.Pix); i += 4 {
+		pixelDelta := 0
 		for c := 0; c < 3; c++ {
 			d := int(x.Pix[i+c]) - int(y.Pix[i+c])
 			if d < 0 {
@@ -51,6 +61,9 @@ func Compare(a, b image.Image) (Result, error) {
 			}
 			if d > maxDelta {
 				maxDelta = d
+			}
+			if d > pixelDelta {
+				pixelDelta = d
 			}
 			f := float64(d) / 255
 			sum += f * f
@@ -62,7 +75,11 @@ func Compare(a, b image.Image) (Result, error) {
 			if d > maxDelta {
 				maxDelta = d
 			}
+			if d > pixelDelta {
+				pixelDelta = d
+			}
 		}
+		hist[pixelDelta]++
 		if x.Pix[i] != y.Pix[i] || x.Pix[i+1] != y.Pix[i+1] ||
 			x.Pix[i+2] != y.Pix[i+2] || x.Pix[i+3] != y.Pix[i+3] {
 			differing++
@@ -75,9 +92,25 @@ func Compare(a, b image.Image) (Result, error) {
 		PSNRAlpha: psnr(sumAlpha, n),
 		SSIM:      ssim(x, y),
 		MaxDelta:  maxDelta,
+		P95:       percentile(&hist, n, 0.95),
+		P99:       percentile(&hist, n, 0.99),
 		Different: float64(differing) / float64(n) * 100,
 		Pixels:    n,
 	}, nil
+}
+
+// percentile walks the histogram to the first error value at or below which
+// the given share of pixels falls.
+func percentile(hist *[256]int, n int, share float64) int {
+	want := int(float64(n) * share)
+	seen := 0
+	for v := 0; v < 256; v++ {
+		seen += hist[v]
+		if seen >= want {
+			return v
+		}
+	}
+	return 255
 }
 
 func psnr(sum float64, pixels int) float64 {

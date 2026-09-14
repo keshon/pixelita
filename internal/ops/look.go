@@ -2,6 +2,7 @@ package ops
 
 import (
 	"fmt"
+	"hash/fnv"
 	"image"
 	"image/color"
 	"image/draw"
@@ -46,16 +47,42 @@ func DefaultLook() LookOptions {
 	return LookOptions{Max: 1400, Background: "checker", Label: true}
 }
 
-// LookPath is where the composite goes when nobody says otherwise.
+// LookDir is where composites go when nobody says otherwise.
 //
 // Not the working directory. This tool produces something to glance at and
 // forget, and a glance should not leave a file in someone's repository for
-// `git status` to find later. The path is fixed rather than unique so that it
-// can be predicted without reading the output first — looking twice overwrites,
-// which is what looking twice means. `-out` is there for when two composites
-// have to exist at once.
-func LookPath() string {
-	return filepath.Join(os.TempDir(), "pixelita", "look.png")
+// `git status` to find later.
+func LookDir() string { return filepath.Join(os.TempDir(), "pixelita") }
+
+// LookPath derives the file name from what is being shown.
+//
+// It used to be one fixed name, on the reasoning that a predictable path is
+// worth more than a unique one. That was wrong in practice: taking several
+// views of the same pair — the whole thing, then a region, then that region
+// magnified — silently destroyed each previous one, and the caller had to
+// remember -out every time or lose the work. Looking twice at the *same* thing
+// should still overwrite, so the name is derived from the inputs and the
+// options rather than from a counter or a clock: repeat a command and it lands
+// on the same file, change anything and it does not.
+func LookPath(paths []string, o LookOptions) string {
+	h := fnv.New32a()
+	for _, p := range paths {
+		fmt.Fprintln(h, p)
+	}
+	fmt.Fprintf(h, "%v|%d|%d|%v|%v|%s", o.Crop, o.Zoom, o.Max, o.Across, o.Label, o.Background)
+
+	name := "look"
+	for i, p := range paths {
+		if i == 2 {
+			break // two names is enough to recognise; the hash does the rest
+		}
+		base := strings.TrimSuffix(filepath.Base(p), filepath.Ext(p))
+		if len(base) > 14 {
+			base = base[:14]
+		}
+		name += "-" + base
+	}
+	return filepath.Join(LookDir(), fmt.Sprintf("%s-%08x.png", name, h.Sum32()))
 }
 
 var (
@@ -99,8 +126,7 @@ func Look(paths []string, o LookOptions) (*image.NRGBA, []report.Item, error) {
 				continue
 			}
 			src = cropped
-			item.Metrics["crop"] = fmt.Sprintf("%dx%d at %d,%d",
-				o.Crop.Dx(), o.Crop.Dy(), o.Crop.Min.X, o.Crop.Min.Y)
+			item.Metrics["crop"] = Rect(o.Crop)
 		}
 		// Stats are taken here: after the crop, so they describe the region
 		// asked about, and before the background, because compositing onto a
@@ -363,7 +389,7 @@ func compose(panels []*image.NRGBA, across bool) *image.NRGBA {
 // something else opens it, quite possibly from another directory.
 func WriteLook(img *image.NRGBA, path string) (string, int64, error) {
 	if strings.TrimSpace(path) == "" {
-		path = LookPath()
+		path = filepath.Join(LookDir(), "look.png")
 	}
 	if abs, err := filepath.Abs(path); err == nil {
 		path = abs

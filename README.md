@@ -374,8 +374,36 @@ img-diff -crop 4500,1300,500,250 a.png b.png # only that region
 img-diff -min-psnr 35 ./src ./converted     # directories; exit 1 on a failure
 ```
 
+`-worst N` is the other way round: instead of being told a region, it finds
+them. The image is divided into tiles, each is measured, and the N with the
+lowest SSIM are printed **in the spelling `-crop` reads**, so the next command
+is a paste rather than a transcription.
+
+```
+region (x,y,w,h)           psnr   ssim worst  p95/p99
+1280,2816,256,256       30.0 dB  0.693    35    16/19
+1280,3072,256,256       30.7 dB  0.697    26    14/17
+```
+
+This replaces what was being done by hand: write a difference map, open it
+scaled down to something a reader can take in, pick the bright patches out by
+eye, and multiply the coordinates back up by the scale factor. Done that way on
+the photograph above, two readers independently picked regions at SSIM 0.86 and
+called them the worst; the search found 0.69, in a part of the frame neither had
+looked at. Ranking is by SSIM because the damage that matters is usually
+structural — PSNR is printed beside it so a region that is merely shifted in
+level still stands out.
+
+`p95/p99` is the per-pixel error that 95% and 99% of pixels stay under. Next to
+`worst` it answers the question a single maximum cannot: on the whole photograph
+`worst` is 92 while p95/p99 are 18/25, which is one stray pixel rather than a
+frame-wide shift.
+
 `-crop` takes the same rectangle `img-look` takes, so a region can be looked at
-and measured without restating it in different terms. It is worth reaching for
+and measured without restating it in different terms. Under a crop the file-size
+columns disappear: they describe the files, not the region, and "saved 69%"
+printed beside a measurement of one corner says something that is not being
+claimed. It is worth reaching for
 more often than it sounds: a whole-image average answers *is it broken* and
 hides *where*. On the photograph measured under `img-quant`, two quantisers were
 a tie across the smooth sky and 2.3 dB apart in the shadows, and only the
