@@ -468,6 +468,37 @@ rounding error, and a resampler would put a plausible picture in front of
 someone trying to find out whether the pixels are right. It implies `-max 0`,
 since magnifying and then capping the size would quietly undo the magnification.
 
+`-stats` also answers the question that sounds like an opinion: *can this file
+still be worked on?* It reports `levels` — how many distinct values each channel
+still uses in the region. That is the tonal headroom, and it is what people mean
+by a file being "ruined for editing", stated as a measurement rather than a
+judgement. On the photograph above:
+
+| Region | Original | Delivered |
+|---|---|---|
+| smooth sky gradient | 69/90/90 | **19/21/20** |
+| grass | 64/60/85 | 24/24/24 |
+| foliage | 256/256/254 | 106/115/112 |
+| the whole image | 256/256/256 | 157/155/158 |
+
+The whole-image figure says 157 of 256 and sounds survivable. The gradient says
+twenty levels where there were ninety, and twenty levels across a sky is what
+opens up the moment anyone lifts the shadows. The usual way to show this is to
+apply a tone curve and count colours afterwards, which proves it while inviting
+the reply that the curve was chosen to suit; counting the levels needs no curve
+at all.
+
+`-stretch` is the picture that goes with the number. It maps the region's own
+range onto the full scale — what auto-levels does, with no parameter to choose —
+so whatever the headroom is hiding comes out. Every panel is mapped by the
+**first** panel's range, because stretching each by its own would map them
+differently and destroy the comparison. On this file it shows the dither being
+amplified into grain rather than classic banding: the quantiser traded steps for
+noise, and a lift brings up the noise.
+
+`-dry-run` reports the measurements and writes no image, for when only the
+numbers are wanted.
+
 `-stats` reports what the shown region averages to and how far its luma spreads.
 The mean is taken **in linear light**, by handing the region to the same
 resampler `img-resize` uses and asking for one pixel — so it agrees with

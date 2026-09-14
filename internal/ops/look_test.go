@@ -3,8 +3,11 @@ package ops
 import (
 	"image"
 	"image/color"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/keshon/pixelita/internal/imgio"
 	"github.com/keshon/pixelita/internal/report"
 	"github.com/keshon/pixelita/internal/resize"
 )
@@ -129,5 +132,81 @@ func TestStatsOfAFullyTransparentRegionSaysSo(t *testing.T) {
 	addStats(&item, src)
 	if got := item.Metrics["mean"]; got != "fully transparent" {
 		t.Errorf("mean is %v, want it to say the region is empty", got)
+	}
+}
+
+// Levels is what "there is no headroom left to edit this" looks like as a
+// measurement, so it has to count what is actually there.
+func TestLevelsCountsDistinctValuesPerChannel(t *testing.T) {
+	src := image.NewNRGBA(image.Rect(0, 0, 32, 1))
+	for x := 0; x < 32; x++ {
+		src.SetNRGBA(x, 0, color.NRGBA{
+			R: uint8(x),     // 32 distinct
+			G: uint8(x / 2), // 16 distinct
+			B: 40,           // 1 distinct
+			A: 255,
+		})
+	}
+	item := report.Item{Metrics: map[string]any{}}
+	addStats(&item, src)
+
+	got, ok := item.Metrics["levels"].([]int)
+	if !ok {
+		t.Fatalf("levels is %T", item.Metrics["levels"])
+	}
+	want := []int{32, 16, 1}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("channel %d has %d levels, want %d", i, got[i], want[i])
+		}
+	}
+}
+
+// The point of -stretch is comparing two files. Stretching each panel by its
+// own range would map them differently and quietly destroy the only thing it
+// is for, so every panel must be mapped by the first one's range.
+func TestStretchUsesOneRangeForEveryPanel(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name string, lo, hi uint8) string {
+		img := image.NewNRGBA(image.Rect(0, 0, 16, 16))
+		for y := 0; y < 16; y++ {
+			for x := 0; x < 16; x++ {
+				v := lo
+				if x >= 8 {
+					v = hi
+				}
+				img.SetNRGBA(x, y, color.NRGBA{v, v, v, 255})
+			}
+		}
+		p := filepath.Join(dir, name)
+		data, err := imgio.EncodePNG(img)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	// Deliberately different ranges: mapped individually these would both come
+	// back as pure black and white and look identical.
+	a := write("a.png", 100, 140)
+	b := write("b.png", 10, 250)
+
+	o := DefaultLook()
+	o.Stretch, o.Label, o.Max = true, false, 0
+	_, items, err := Look([]string{a, b}, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("got %d items", len(items))
+	}
+	first, second := items[0].Str("stretched"), items[1].Str("stretched")
+	if first != second {
+		t.Errorf("panels were stretched differently: %q and %q", first, second)
+	}
+	if first == "" {
+		t.Error("no stretch was recorded at all")
 	}
 }

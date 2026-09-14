@@ -39,6 +39,7 @@ type LookOptions struct {
 	Across     bool            // lay panels side by side rather than stacked
 	Zoom       int             // magnify by this many times, 0 or 1 leaves it alone
 	Stats      bool            // also report what the shown pixels average to
+	Stretch    bool            // map the region's own range to full scale
 	Label      bool            // write the file name on each panel
 	Out        string          // empty means LookPath()
 }
@@ -102,6 +103,7 @@ func Look(paths []string, o LookOptions) (*image.NRGBA, []report.Item, error) {
 
 	panels := make([]*image.NRGBA, 0, len(paths))
 	items := make([]report.Item, 0, len(paths))
+	stretchLo, stretchHi := -1, -1
 
 	for _, p := range paths {
 		item := report.Item{Path: p, Metrics: map[string]any{}}
@@ -133,6 +135,17 @@ func Look(paths []string, o LookOptions) (*image.NRGBA, []report.Item, error) {
 		// checkerboard would average in the checkerboard.
 		if o.Stats {
 			addStats(&item, src)
+		}
+		// Every panel is stretched by the FIRST panel's range, not its own.
+		// Stretched individually they would each be mapped differently and the
+		// comparison would be meaningless — which is the only thing anyone
+		// wants this for.
+		if o.Stretch {
+			if stretchLo < 0 {
+				stretchLo, stretchHi = lumaRange(src)
+			}
+			src = stretchTo(src, stretchLo, stretchHi)
+			item.Metrics["stretched"] = fmt.Sprintf("%d..%d to 0..255", stretchLo, stretchHi)
 		}
 		if alpha := hasAlpha(src); alpha && o.Background != "none" {
 			src = onBackground(src, o.Background)
@@ -253,6 +266,35 @@ func addStats(item *report.Item, src *image.NRGBA) {
 	item.Metrics["mean"] = fmt.Sprintf("#%02x%02x%02x", m.R, m.G, m.B)
 	item.Metrics["meanRGB"] = []int{int(m.R), int(m.G), int(m.B)}
 
+	// How many distinct values each channel still uses here — the tonal
+	// headroom left in the region.
+	//
+	// This is the honest form of "the file can no longer be edited". That claim
+	// is usually demonstrated by applying some tone curve and counting colours
+	// afterwards, which proves it but invites the reply that the curve was
+	// chosen to suit. The cause needs no curve: a region holding 58 levels
+	// where the original held 254 will band under any lift at all, and the two
+	// numbers side by side say so without anyone having to agree on an edit.
+	var occupied [3][256]bool
+	for y := src.Rect.Min.Y; y < src.Rect.Max.Y; y++ {
+		for x := src.Rect.Min.X; x < src.Rect.Max.X; x++ {
+			c := src.NRGBAAt(x, y)
+			if c.A == 0 {
+				continue
+			}
+			occupied[0][c.R], occupied[1][c.G], occupied[2][c.B] = true, true, true
+		}
+	}
+	levels := make([]int, 3)
+	for ch := range occupied {
+		for _, on := range occupied[ch] {
+			if on {
+				levels[ch]++
+			}
+		}
+	}
+	item.Metrics["levels"] = levels
+
 	lo, hi, seen := 255, 0, false
 	for y := src.Rect.Min.Y; y < src.Rect.Max.Y; y++ {
 		for x := src.Rect.Min.X; x < src.Rect.Max.X; x++ {
@@ -269,6 +311,58 @@ func addStats(item *report.Item, src *image.NRGBA) {
 	if seen {
 		item.Metrics["luma"] = []int{lo, hi}
 	}
+}
+
+// lumaRange is the darkest and brightest the region gets.
+func lumaRange(src *image.NRGBA) (int, int) {
+	lo, hi := 255, 0
+	for y := src.Rect.Min.Y; y < src.Rect.Max.Y; y++ {
+		for x := src.Rect.Min.X; x < src.Rect.Max.X; x++ {
+			c := src.NRGBAAt(x, y)
+			if c.A == 0 {
+				continue
+			}
+			l := (2126*int(c.R) + 7152*int(c.G) + 722*int(c.B)) / 10000
+			lo, hi = min(lo, l), max(hi, l)
+		}
+	}
+	return lo, hi
+}
+
+// stretchTo maps a range of levels onto the whole scale, the way the first
+// thing anyone does to a flat photograph maps it.
+//
+// This is here because "the file can no longer be edited" is a claim that
+// sounds like an opinion until someone sees it. A region quantised down to a
+// few dozen levels looks fine until it is stretched, and then the steps between
+// those levels open into visible bands. Applying a real tone curve would prove
+// the same thing while inviting the argument that the curve was chosen to
+// flatter the conclusion; stretching a region's own range to full scale has no
+// parameter to choose, and it is what auto-levels does in every editor there
+// is.
+//
+// One scale factor for all three channels, taken from luma, so that colour
+// relationships survive: stretching each channel by its own range would shift
+// the hue and produce an artefact of the measurement rather than of the file.
+func stretchTo(src *image.NRGBA, lo, hi int) *image.NRGBA {
+	if hi <= lo {
+		return src
+	}
+	var lut [256]uint8
+	scale := 255.0 / float64(hi-lo)
+	for v := 0; v < 256; v++ {
+		n := float64(v-lo) * scale
+		lut[v] = uint8(min(max(n, 0), 255))
+	}
+
+	out := image.NewNRGBA(image.Rect(0, 0, src.Rect.Dx(), src.Rect.Dy()))
+	for y := 0; y < out.Rect.Dy(); y++ {
+		for x := 0; x < out.Rect.Dx(); x++ {
+			c := src.NRGBAAt(src.Rect.Min.X+x, src.Rect.Min.Y+y)
+			out.SetNRGBA(x, y, color.NRGBA{lut[c.R], lut[c.G], lut[c.B], c.A})
+		}
+	}
+	return out
 }
 
 func cropTo(src *image.NRGBA, r image.Rectangle) (*image.NRGBA, error) {

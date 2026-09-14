@@ -55,6 +55,26 @@ usually invisible at life size and obvious at four times it. Pixels are repeated
 never resampled, so what you see is what is stored — which is the point when the
 thing you suspect is a rounding error. It implies `-max 0`.
 
+**`-stats` also answers "is this file still editable?"** — a question that
+otherwise turns into an argument. It reports `levels`, the number of distinct
+values each channel still uses in the region. That is the tonal headroom:
+
+```bash
+img-look -dry-run -stats -crop 1150,1560,220,90 original.png compressed.png
+  original    levels 69/90/90
+  compressed  levels 19/21/20     ← a gradient with twenty levels will band
+```
+
+Measure a **smooth** region for this, not the whole image: across a whole frame
+the figure stays high and says nothing, while the gradient where it matters has
+already collapsed. Do not prove the point by applying a tone curve and counting
+colours afterwards — it works, but the curve is yours to choose and the client
+can say so. The level count needs no curve.
+
+`-stretch` is the picture that goes with it: the region's own range mapped to
+full scale, as auto-levels would, which brings out whatever the headroom was
+hiding. `-dry-run` gives the numbers without writing an image.
+
 **`-stats` when your eye might be fooling you.** It reports the mean colour of
 the region (in linear light) and its luma range. Reach for it the moment you
 want to say something like "the shadows got crushed" or "the tint shifted" — it

@@ -20,7 +20,7 @@ import (
 func main() {
 	opt := ops.DefaultLook()
 	var cropSpec, atSpec string
-	var asJSON bool
+	var asJSON, dryRun bool
 
 	flag.IntVar(&opt.Max, "max", opt.Max, "longest side of each panel in pixels, 0 keeps the original")
 	flag.StringVar(&cropSpec, "crop", "", "region to show, as x,y,w,h; applied to every input")
@@ -30,13 +30,18 @@ func main() {
 	flag.IntVar(&opt.Zoom, "zoom", 0,
 		"magnify this many times by repeating pixels, no smoothing; implies -max 0")
 	flag.BoolVar(&opt.Stats, "stats", false,
-		"also report the mean colour and luma range of what is shown")
+		"also report the mean colour, luma range and tonal levels of what is shown")
+	flag.BoolVar(&opt.Stretch, "stretch", false,
+		"map the region's own range onto the full scale, as auto-levels would; "+
+			"every panel uses the first one's range so they stay comparable")
 	flag.BoolVar(&opt.Label, "label", opt.Label, "write the file name on each panel")
 	flag.StringVar(&opt.Out, "out", opt.Out,
 		"where to write the result; the default is a name derived from the "+
 			"inputs, under "+ops.LookDir())
 	flag.StringVar(&atSpec, "at", "",
 		"print the pixels at these points instead of writing an image, as x,y x,y")
+	flag.BoolVar(&dryRun, "dry-run", false,
+		"measure and report, write no image — for when only -stats is wanted")
 	flag.BoolVar(&asJSON, "json", false, "emit the report as JSON")
 
 	flag.Usage = func() {
@@ -114,7 +119,7 @@ func main() {
 	}
 
 	img, items, err := ops.Look(flag.Args(), opt)
-	rep := report.New("img-look", "shown", false)
+	rep := report.New("img-look", "shown", dryRun)
 	for _, it := range items {
 		rep.Add(it)
 	}
@@ -127,8 +132,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Every other tool here reads -dry-run as "report, write nothing". Asking
+	// for numbers should not oblige anyone to produce a picture they did not
+	// want; the measurements above are already done.
+	if dryRun {
+		os.Exit(rep.Emit(os.Stdout, columns, asJSON, false))
+	}
+
 	out, size, err := ops.WriteLook(img, opt.Out)
 	if err != nil {
+		// Still emit: the measurements are valid, and a caller that asked for
+		// -json asked for a document.
+		rep.Emit(os.Stdout, columns, asJSON, false)
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
@@ -156,6 +171,15 @@ var columns = []report.Column{
 	{Title: "shown", Width: 12, Right: true, Value: func(i report.Item) string { return i.Str("to") }},
 	{Title: "region", Width: 20, Value: func(i report.Item) string { return i.Str("crop") }},
 	{Title: "mean", Width: 8, Value: func(i report.Item) string { return i.Str("mean") }},
+	// Levels is the headroom left: how many distinct values each channel still
+	// uses here. It is what "this file can no longer be edited" means when
+	// stated as a measurement instead of an opinion.
+	{Title: "levels rgb", Width: 14, Right: true, Value: func(i report.Item) string {
+		if v, ok := i.Metrics["levels"].([]int); ok && len(v) == 3 {
+			return fmt.Sprintf("%d/%d/%d", v[0], v[1], v[2])
+		}
+		return ""
+	}},
 	{Title: "luma", Width: 9, Right: true, Value: func(i report.Item) string {
 		if v, ok := i.Metrics["luma"].([]int); ok && len(v) == 2 {
 			return fmt.Sprintf("%d..%d", v[0], v[1])
