@@ -275,25 +275,8 @@ func addStats(item *report.Item, src *image.NRGBA) {
 	// chosen to suit. The cause needs no curve: a region holding 58 levels
 	// where the original held 254 will band under any lift at all, and the two
 	// numbers side by side say so without anyone having to agree on an edit.
-	var occupied [3][256]bool
-	for y := src.Rect.Min.Y; y < src.Rect.Max.Y; y++ {
-		for x := src.Rect.Min.X; x < src.Rect.Max.X; x++ {
-			c := src.NRGBAAt(x, y)
-			if c.A == 0 {
-				continue
-			}
-			occupied[0][c.R], occupied[1][c.G], occupied[2][c.B] = true, true, true
-		}
-	}
-	levels := make([]int, 3)
-	for ch := range occupied {
-		for _, on := range occupied[ch] {
-			if on {
-				levels[ch]++
-			}
-		}
-	}
-	item.Metrics["levels"] = levels
+	lv := channelLevels(src)
+	item.Metrics["levels"] = lv[:]
 
 	lo, hi, seen := 255, 0, false
 	for y := src.Rect.Min.Y; y < src.Rect.Max.Y; y++ {
@@ -360,6 +343,32 @@ func stretchTo(src *image.NRGBA, lo, hi int) *image.NRGBA {
 		for x := 0; x < out.Rect.Dx(); x++ {
 			c := src.NRGBAAt(src.Rect.Min.X+x, src.Rect.Min.Y+y)
 			out.SetNRGBA(x, y, color.NRGBA{lut[c.R], lut[c.G], lut[c.B], c.A})
+		}
+	}
+	return out
+}
+
+// channelLevels counts the distinct values each channel still uses: the tonal
+// headroom left in a region. Shared, because the same count belongs both in a
+// comparison table and in one region's statistics, and two implementations of
+// one number would eventually disagree about it.
+func channelLevels(src *image.NRGBA) [3]int {
+	var occupied [3][256]bool
+	for y := src.Rect.Min.Y; y < src.Rect.Max.Y; y++ {
+		for x := src.Rect.Min.X; x < src.Rect.Max.X; x++ {
+			c := src.NRGBAAt(x, y)
+			if c.A == 0 {
+				continue
+			}
+			occupied[0][c.R], occupied[1][c.G], occupied[2][c.B] = true, true, true
+		}
+	}
+	var out [3]int
+	for ch := range occupied {
+		for _, on := range occupied[ch] {
+			if on {
+				out[ch]++
+			}
 		}
 	}
 	return out
@@ -516,6 +525,29 @@ func ParseRect(s string) (image.Rectangle, error) {
 		return image.Rectangle{}, fmt.Errorf("width and height must be positive in %q", s)
 	}
 	return image.Rect(x, y, x+w, y+h), nil
+}
+
+// ParseRects reads several rectangles: "x,y,w,h x,y,w,h" or separated by
+// semicolons. One rectangle is the common case and still parses.
+//
+// The plural exists because measuring five places meant five invocations and a
+// shell loop, which is a loop written to work around a tool rather than to do
+// anything.
+func ParseRects(s string) ([]image.Rectangle, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, nil
+	}
+	fields := strings.FieldsFunc(s, func(r rune) bool { return r == ' ' || r == ';' })
+	out := make([]image.Rectangle, 0, len(fields))
+	for _, f := range fields {
+		r, err := ParseRect(f)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, nil
 }
 
 // ParsePoints reads "x,y" repeated: "10,20 300,15" or "10,20;300,15".

@@ -22,20 +22,29 @@ func main() {
 	opt := ops.DefaultDiff()
 	var out, cropSpec string
 	var worst, tile int
+	var levels bool
+	var by string
 	var verbose, asJSON bool
+	var showVersion bool
 	var jobs int
 
 	flag.StringVar(&out, "out", "",
 		"write difference maps here: a file for one pair, a directory for many")
 	flag.StringVar(&cropSpec, "crop", "",
-		"measure only this region of both, as x,y,w,h; the same rectangle img-look takes")
+		"measure only these regions, as x,y,w,h; several may be given, separated by spaces")
 	flag.IntVar(&worst, "worst", 0,
 		"instead of one figure, find the N most damaged regions and print where they are")
-	flag.IntVar(&tile, "tile", 256, "region size in pixels for -worst")
+	flag.StringVar(&by, "by", "ssim",
+		"what -worst ranks by: ssim (structure lost), psnr (error in level), "+
+			"or levels (tonal headroom lost)")
+	flag.BoolVar(&levels, "levels", false,
+		"also report tonal levels per channel, before and after: the headroom left")
+	flag.IntVar(&tile, "tile", 256, "region size in pixels for -worst and -flattest")
 	flag.Float64Var(&opt.Amplify, "amplify", opt.Amplify, "how much to brighten the difference map")
 	flag.Float64Var(&opt.MinPSNR, "min-psnr", 0, "fail below this PSNR in dB, 0 disables")
 	flag.Float64Var(&opt.MinSSIM, "min-ssim", 0, "fail below this SSIM, 0 disables")
 	flag.BoolVar(&verbose, "v", false, "list identical pairs too")
+	flag.BoolVar(&showVersion, "version", false, "print which build this is and exit")
 	flag.BoolVar(&asJSON, "json", false, "emit the report as JSON")
 	flag.IntVar(&jobs, "jobs", 0, "parallel comparisons, 0 means one per CPU core")
 
@@ -53,23 +62,46 @@ func main() {
 	}
 	flag.Parse()
 
-	var err error
-	if opt.Crop, err = ops.ParseRect(cropSpec); err != nil {
+	if showVersion {
+		cli.Version(os.Stdout, "img-diff")
+		return
+	}
+
+	rects, err := ops.ParseRects(cropSpec)
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(2)
 	}
+	if len(rects) == 1 {
+		opt.Crop = rects[0]
+	}
 
-	// -worst answers a different question and takes a different route: not
-	// "how far apart are these" but "where". It is deliberately a search rather
-	// than something to eyeball off a difference map, because reading
-	// coordinates off a scaled-down picture and scaling them back by hand is
-	// arithmetic, and arithmetic done by eye is arithmetic done wrong.
-	if worst > 0 {
+	// Three routes ask for a set of regions rather than one figure: find the
+	// damaged ones, find the smooth ones, or name them. They print the same
+	// table, because the answer wanted is the same shape in every case — a row
+	// per place, with every number that belongs on that row.
+	if worst > 0 || len(rects) > 1 {
 		if flag.NArg() != 2 {
 			flag.Usage()
 			os.Exit(2)
 		}
-		items, err := ops.WorstRegions(flag.Arg(0), flag.Arg(1), worst, tile)
+		var items []report.Item
+		var note string
+		if worst > 0 {
+			ranking := ops.Ranking(by)
+			switch ranking {
+			case ops.RankSSIM, ops.RankPSNR, ops.RankLevels:
+			default:
+				fmt.Fprintf(os.Stderr, "error: -by must be ssim, psnr or levels, not %q\n", by)
+				os.Exit(2)
+			}
+			items, err = ops.WorstRegions(flag.Arg(0), flag.Arg(1), worst, tile, ranking,
+				levels || ranking == ops.RankLevels)
+			note = "worst by " + by + " first"
+		} else {
+			items, err = ops.MeasureRegions(flag.Arg(0), flag.Arg(1), rects, levels)
+			note = "in the order given"
+		}
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(1)
@@ -78,9 +110,10 @@ func main() {
 		for _, it := range items {
 			rep.Add(it)
 		}
-		rep.Note("worst first; paste a region into -crop to measure it, " +
-			"or into img-look -crop to see it")
-		os.Exit(rep.Emit(os.Stdout, regionColumns, asJSON, verbose))
+		rep.Note("%s; paste a region into -crop to measure it again, "+
+			"or into img-look -crop to see it", note)
+		os.Exit(rep.Emit(os.Stdout, regionColumns(levels || ops.Ranking(by) == ops.RankLevels),
+			asJSON, verbose))
 	}
 
 	if flag.NArg() != 2 {
@@ -170,9 +203,24 @@ func stem(p string) string {
 // regionColumns is its own set rather than a slice of the one below. A region
 // row has no file size, and three columns of dashes would be noise where the
 // whole point is that one rectangle and one number read at a glance.
-var regionColumns = append([]report.Column{
-	{Title: "region (x,y,w,h)", Width: 22, Value: func(i report.Item) string { return i.Str("crop") }},
-}, measureColumns...)
+func regionColumns(levels bool) []report.Column {
+	out := append([]report.Column{
+		{Title: "region (x,y,w,h)", Width: 22, Value: func(i report.Item) string { return i.Str("crop") }},
+	}, measureColumns...)
+	if levels {
+		out = append(out, report.Column{Title: "levels rgb", Width: 26,
+			Value: func(i report.Item) string {
+				b, ok1 := i.Metrics["levelsBefore"].([]int)
+				a, ok2 := i.Metrics["levels"].([]int)
+				if !ok1 || !ok2 {
+					return ""
+				}
+				return fmt.Sprintf("%d/%d/%d to %d/%d/%d",
+					b[0], b[1], b[2], a[0], a[1], a[2])
+			}})
+	}
+	return out
+}
 
 // cropColumns is the same idea for a single named region: the file still needs
 // naming, its size does not, because the size is not what was measured.

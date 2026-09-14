@@ -23,11 +23,28 @@ coordinates are pasted rather than transcribed, and a test pins `Rect` and
 The tools are used by models as much as by people, and where that changes a
 decision it is written down beside the code. Blind tests are how that gets
 found: give an agent a real task with no hint about tooling and watch what it
-does. Both such tests so far paid for themselves — the first proved a skill that
-never reached the model, the second produced a list of seven frictions, every
-one of them real. A wrong number a tool invites is the tool's defect, not the
-reader's: `colours` sitting beside `coloursExact: false` was quoted to five
-digits, so the field is now called `coloursAtLeast` when it is one.
+does. Three have paid for themselves — a skill that never reached the model, a
+list of seven frictions, and then the finding that matters most.
+
+**Count the calls, not the flags.** Across three runs of the same audit the tool
+count grew and the call count went 26, 24, 31. Every fix had been real and none
+had shortened the path, because each added a way to ask one more question while
+the job was asking many. The cause was single: a region at a time. Measuring five
+places meant five invocations, and the tonal figures lived in a different binary
+from the fidelity figures, so the same rectangle was visited twice. A set of
+regions is the unit now, and that audit is two commands. When a change adds a
+flag, ask what it removes.
+
+A wrong number a tool invites is the tool's defect, not the reader's: `colours`
+sitting beside `coloursExact: false` was quoted to five digits, so the field is
+called `coloursAtLeast` when it is one. The same goes for a byte count that
+poses a question it cannot answer — `metadataBytes` sent a reader outside the
+toolkit to find out what had changed, so the chunks are named.
+
+**A flag that does not survive measurement does not ship.** `-flattest` was
+written, measured against a real photograph, found to point at the wrong half of
+the frame, and deleted in favour of `-by levels`. The reasoning is kept in
+`internal/ops/worst.go` so it is not attempted again.
 
 The two tools that answer questions rather than change files — `img-diff` and
 `img-look` — are what makes that rule checkable. When a change to an encoder

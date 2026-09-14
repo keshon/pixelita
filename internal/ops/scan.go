@@ -52,6 +52,12 @@ func Scan(path string, o ScanOptions) report.Item {
 	if head.Palette > 0 {
 		item.Metrics["paletteSize"] = head.Palette
 	}
+	if len(head.Chunks) > 0 {
+		// Named, not just weighed. Whether a file still declares its colour
+		// space is a question about gAMA, cHRM, sRGB and iCCP being present,
+		// and it decides whether "the colours were ruined" is a fair charge.
+		item.Metrics["chunks"] = head.Chunks
+	}
 	item.Metrics["bitDepth"] = head.BitDepth
 	item.Metrics["hasAlpha"] = head.HasAlpha
 	item.Metrics["size"] = fmt.Sprintf("%dx%d", head.Width, head.Height)

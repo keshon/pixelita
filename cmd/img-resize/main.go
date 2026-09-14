@@ -21,6 +21,7 @@ func main() {
 	opt := ops.DefaultResize()
 	var filterName, widths, listFile string
 	var verbose, asJSON bool
+	var showVersion bool
 	var jobs int
 
 	flag.IntVar(&opt.Width, "width", 0, "target width in pixels, 0 derives it from the height")
@@ -40,6 +41,7 @@ func main() {
 	flag.BoolVar(&opt.Replace, "replace", false, "overwrite the source file")
 	flag.BoolVar(&opt.DryRun, "dry-run", false, "report what would happen, write nothing")
 	flag.BoolVar(&verbose, "v", false, "list skipped files too")
+	flag.BoolVar(&showVersion, "version", false, "print which build this is and exit")
 	flag.BoolVar(&asJSON, "json", false, "emit the report as JSON")
 	flag.IntVar(&jobs, "jobs", 0, "parallel workers, 0 means one per CPU core")
 	flag.StringVar(&listFile, "from-file", "", "read paths from a file, one per line")
@@ -54,6 +56,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  img-resize -width 400 -height 400 -fit cover avatar.jpg\n")
 	}
 	flag.Parse()
+
+	if showVersion {
+		cli.Version(os.Stdout, "img-resize")
+		return
+	}
 
 	var ok bool
 	if opt.Filter, ok = resize.FilterByName(filterName); !ok {

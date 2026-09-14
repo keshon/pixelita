@@ -374,6 +374,13 @@ img-diff -crop 4500,1300,500,250 a.png b.png # only that region
 img-diff -min-psnr 35 ./src ./converted     # directories; exit 1 on a failure
 ```
 
+`-crop` takes **several** rectangles at once — `-crop "x,y,w,h x,y,w,h"` — and
+prints a row for each. That is not a convenience: measuring five places used to
+mean five invocations and a shell loop, a loop written to work around a tool
+rather than to do anything. `-levels` adds the tonal headroom before and after to
+the same rows, so the table a report actually wants is one command rather than
+one command per cell.
+
 `-worst N` is the other way round: instead of being told a region, it finds
 them. The image is divided into tiles, each is measured, and the N with the
 lowest SSIM are printed **in the spelling `-crop` reads**, so the next command
@@ -390,9 +397,20 @@ scaled down to something a reader can take in, pick the bright patches out by
 eye, and multiply the coordinates back up by the scale factor. Done that way on
 the photograph above, two readers independently picked regions at SSIM 0.86 and
 called them the worst; the search found 0.69, in a part of the frame neither had
-looked at. Ranking is by SSIM because the damage that matters is usually
-structural — PSNR is printed beside it so a region that is merely shifted in
-level still stands out.
+looked at. `-by` chooses what "worst" means, because there is more than one way to be worse
+and they do not point at the same places: `ssim` (default, structure lost),
+`psnr` (error in level), or `levels` (tonal headroom lost). On the photograph
+above, ranking by levels surfaced a region at SSIM 0.923 — structurally fine —
+that had lost four fifths of its range.
+
+A `-flattest` search was written before `-by levels` and thrown away, which is
+worth recording. The idea was to find smooth regions, since too few levels band
+where the tone ramps gently. Measured on this photograph it pointed at the wrong
+half of the frame: a night exposure has heavy grain in the sky and crushed, quiet
+shadows, so by any roughness measure the shadows are the "smooth" part. The
+premise was already known to be false here besides — a dithered file does not
+band, it trades the steps for noise, which `-stretch` had shown before the search
+was written. Ranking by the headroom itself needs no proxy.
 
 `p95/p99` is the per-pixel error that 95% and 99% of pixels stay under. Next to
 `worst` it answers the question a single maximum cannot: on the whole photograph

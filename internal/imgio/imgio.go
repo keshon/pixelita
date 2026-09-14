@@ -203,7 +203,13 @@ type Header struct {
 	// alone says a palette is in use; it does not say whether the encoder spent
 	// 256 entries or 64, and that difference is the whole story when judging
 	// what a quantiser did to a file.
-	Palette     int
+	Palette int
+	// Chunks names the ancillary blocks a PNG carries. A byte count alone
+	// raises a question it cannot answer: "metadata 176 bytes against 29" reads
+	// as though something was thrown away, and the reader has to go outside the
+	// toolkit with a script to find out that what changed was a colour-space
+	// declaration being restated in a shorter form. The names answer it.
+	Chunks      []string
 	ColourType  string
 	HasAlpha    bool
 	Interlaced  bool
@@ -262,6 +268,11 @@ func pngHeader(raw []byte) (Header, error) {
 		}
 		if name == "PLTE" {
 			h.Palette = size / 3 // three bytes an entry, by the specification
+		}
+		switch name {
+		case "IHDR", "IDAT", "IEND":
+		default:
+			h.Chunks = append(h.Chunks, name)
 		}
 		if name == "tRNS" {
 			h.HasAlpha = true

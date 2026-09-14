@@ -23,6 +23,7 @@ import (
 func main() {
 	opt := ops.DefaultScan()
 	var verbose, asJSON bool
+	var showVersion bool
 	var jobs int
 	var listFile string
 
@@ -36,6 +37,7 @@ func main() {
 	flag.Float64Var(&opt.MinPSNR, "min-psnr", opt.MinPSNR,
 		"do not recommend a conversion below this fidelity, in dB")
 	flag.BoolVar(&verbose, "v", false, "list files with nothing to gain too")
+	flag.BoolVar(&showVersion, "version", false, "print which build this is and exit")
 	flag.BoolVar(&asJSON, "json", false, "emit the report as JSON")
 	flag.IntVar(&jobs, "jobs", 0, "parallel workers, 0 means one per CPU core")
 	flag.StringVar(&listFile, "from-file", "", "read paths from a file, one per line")
@@ -50,6 +52,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  img-scan -json ./public/img > report.json\n")
 	}
 	flag.Parse()
+
+	if showVersion {
+		cli.Version(os.Stdout, "img-scan")
+		return
+	}
 
 	files, err := cli.Roots(flag.Args(), listFile, imgio.Extensions...)
 	if err != nil {

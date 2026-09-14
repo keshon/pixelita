@@ -22,6 +22,7 @@ import (
 func main() {
 	opt := ops.DefaultWebP()
 	var verbose, asJSON bool
+	var showVersion bool
 	var jobs int
 	var listFile string
 
@@ -37,6 +38,7 @@ func main() {
 	flag.BoolVar(&verbose, "v", false, "list skipped files too")
 	flag.StringVar(&opt.OutDir, "out-dir", "",
 		"write results here instead of next to the source")
+	flag.BoolVar(&showVersion, "version", false, "print which build this is and exit")
 	flag.BoolVar(&asJSON, "json", false, "emit the report as JSON")
 	flag.IntVar(&jobs, "jobs", 0, "parallel encoders, 0 means one per CPU core")
 	flag.StringVar(&listFile, "from-file", "",
@@ -52,6 +54,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  img-webp -mode near-lossless -skip-palette=false ./ui-shots\n")
 	}
 	flag.Parse()
+
+	if showVersion {
+		cli.Version(os.Stdout, "img-webp")
+		return
+	}
 
 	if _, err := opt.EncoderOptions(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)

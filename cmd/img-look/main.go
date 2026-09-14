@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/keshon/pixelita/internal/cli"
 	"github.com/keshon/pixelita/internal/ops"
 	"github.com/keshon/pixelita/internal/report"
 )
@@ -21,6 +22,7 @@ func main() {
 	opt := ops.DefaultLook()
 	var cropSpec, atSpec string
 	var asJSON, dryRun bool
+	var showVersion bool
 
 	flag.IntVar(&opt.Max, "max", opt.Max, "longest side of each panel in pixels, 0 keeps the original")
 	flag.StringVar(&cropSpec, "crop", "", "region to show, as x,y,w,h; applied to every input")
@@ -42,6 +44,7 @@ func main() {
 		"print the pixels at these points instead of writing an image, as x,y x,y")
 	flag.BoolVar(&dryRun, "dry-run", false,
 		"measure and report, write no image — for when only -stats is wanted")
+	flag.BoolVar(&showVersion, "version", false, "print which build this is and exit")
 	flag.BoolVar(&asJSON, "json", false, "emit the report as JSON")
 
 	flag.Usage = func() {
@@ -60,6 +63,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  img-look -at '10,20 300,15' shot.png           # the numbers, not the picture\n")
 	}
 	flag.Parse()
+
+	if showVersion {
+		cli.Version(os.Stdout, "img-look")
+		return
+	}
 
 	// Magnifying and then capping the size would silently undo the zoom: a
 	// region cut from a large photograph is fitted to 1400px by default, and

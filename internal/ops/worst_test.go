@@ -69,7 +69,7 @@ func TestWorstRegionsFindsTheDamage(t *testing.T) {
 	}
 	pa, pb := write("a.png", a), write("b.png", b)
 
-	items, err := WorstRegions(pa, pb, 3, 128)
+	items, err := WorstRegions(pa, pb, 3, 128, RankSSIM, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,5 +95,94 @@ func TestWorstRegionsFindsTheDamage(t *testing.T) {
 	}
 	if first > 0.9 {
 		t.Errorf("the flattened block scored %.3f — the ranking is not seeing it", first)
+	}
+
+	// Levels travel with the fidelity figures so the table needs one call, not
+	// two binaries for the same rectangle.
+	before, ok1 := items[0].Metrics["levelsBefore"].([]int)
+	after, ok2 := items[0].Metrics["levels"].([]int)
+	if !ok1 || !ok2 {
+		t.Fatalf("levels missing: %v %v", items[0].Metrics["levelsBefore"], items[0].Metrics["levels"])
+	}
+	if after[0] >= before[0] {
+		t.Errorf("levels %v to %v — flattening a block must cost tonal levels", before, after)
+	}
+}
+
+// Ranking by tonal headroom has to point somewhere different from ranking by
+// structure, or the flag is decoration.
+func TestRankingByLevelsFindsTheHeadroomLoss(t *testing.T) {
+	dir := t.TempDir()
+	const size = 384
+
+	a := image.NewNRGBA(image.Rect(0, 0, size, size))
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
+			v := uint8((x * 2 % 256))
+			a.SetNRGBA(x, y, color.NRGBA{v, v, v, 255})
+		}
+	}
+	b := image.NewNRGBA(a.Rect)
+	copy(b.Pix, a.Pix)
+	// One block posterised to four levels: little structural change, a large
+	// loss of headroom.
+	for y := 128; y < 256; y++ {
+		for x := 0; x < 128; x++ {
+			c := b.NRGBAAt(x, y)
+			q := uint8(int(c.R) / 64 * 64)
+			b.SetNRGBA(x, y, color.NRGBA{q, q, q, 255})
+		}
+	}
+
+	write := func(name string, img *image.NRGBA) string {
+		p := filepath.Join(dir, name)
+		data, err := imgio.EncodePNG(img)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	pa, pb := write("a.png", a), write("b.png", b)
+
+	items, err := WorstRegions(pa, pb, 1, 128, RankLevels, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := ParseRect(items[0].Str("crop"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !r.Overlaps(image.Rect(0, 128, 128, 256)) {
+		t.Errorf("ranked %v worst, but the headroom was taken from 0,128,128,128", r)
+	}
+	before := items[0].Metrics["levelsBefore"].([]int)
+	after := items[0].Metrics["levels"].([]int)
+	if after[0] >= before[0] {
+		t.Errorf("levels %v to %v — nothing was lost where the loss was placed", before, after)
+	}
+}
+
+// A set of rectangles is the unit of the work, so the plural has to read what
+// the singular writes.
+func TestParseRectsReadsAList(t *testing.T) {
+	got, err := ParseRects("0,0,16,16 100,200,32,48;7,7,1,1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []image.Rectangle{
+		image.Rect(0, 0, 16, 16),
+		image.Rect(100, 200, 132, 248),
+		image.Rect(7, 7, 8, 8),
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d rectangles, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("%d: got %v, want %v", i, got[i], want[i])
+		}
 	}
 }

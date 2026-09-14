@@ -21,6 +21,7 @@ import (
 func main() {
 	opt := ops.DefaultJPEG()
 	var verbose, asJSON bool
+	var showVersion bool
 	var jobs int
 	var listFile string
 
@@ -30,6 +31,7 @@ func main() {
 	flag.BoolVar(&opt.Replace, "replace", false, "overwrite the source file instead of writing next to it")
 	flag.StringVar(&opt.Suffix, "suffix", opt.Suffix, "suffix for the output name")
 	flag.BoolVar(&verbose, "v", false, "list skipped files too")
+	flag.BoolVar(&showVersion, "version", false, "print which build this is and exit")
 	flag.BoolVar(&asJSON, "json", false, "emit the report as JSON")
 	flag.IntVar(&jobs, "jobs", 0, "parallel workers, 0 means one per CPU core")
 	flag.StringVar(&listFile, "from-file", "", "read paths from a file, one per line")
@@ -43,6 +45,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  img-jpeg -replace ./public/img/photos\n")
 	}
 	flag.Parse()
+
+	if showVersion {
+		cli.Version(os.Stdout, "img-jpeg")
+		return
+	}
 
 	files, err := cli.Roots(flag.Args(), listFile, ".jpg", ".jpeg")
 	if err != nil {
