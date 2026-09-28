@@ -290,9 +290,6 @@ func ScanSummary(rep *report.Report, o ScanOptions) {
 	// Last, and deliberately after the codec lines, because it is usually the
 	// larger number and reads as the correction to them: converting a file
 	// nobody needs at that size is the second question, not the first.
-	// Last, and deliberately after the codec lines, because it is usually the
-	// larger number and reads as the correction to them: converting a file that
-	// nobody needs at that size is the second question, not the first.
 	if wideFiles > 0 {
 		widths := append([]int(nil), o.DisplayWidths...)
 		sort.Ints(widths)
