@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"bytes"
 	"fmt"
 	"math"
 	"os"
@@ -10,6 +11,7 @@ import (
 	webp "github.com/mayahiro/go-webp"
 
 	"github.com/keshon/pixelita/internal/imgio"
+	"github.com/keshon/pixelita/internal/metric"
 	"github.com/keshon/pixelita/internal/quant"
 	"github.com/keshon/pixelita/internal/report"
 	"github.com/keshon/pixelita/internal/resize"
@@ -141,13 +143,23 @@ func Scan(path string, o ScanOptions) report.Item {
 		}
 	}
 
-	var counter sizeCounter
+	var counter bytes.Buffer
 	err = webp.Encode(&counter, img, &webp.Options{
 		Quality: o.WebPQuality, Compression: webp.CompressionLossy, Mode: webp.ModeDefault,
 	})
 	if err == nil {
-		item.Metrics["webpBytes"] = int64(counter.n)
-		item.Metrics["webpGain"] = gain(item.BytesBefore, int64(counter.n))
+		item.Metrics["webpBytes"] = int64(counter.Len())
+		item.Metrics["webpGain"] = gain(item.BytesBefore, int64(counter.Len()))
+		// The estimate must clear the same fidelity floor the converter
+		// enforces, or scan recommends what webp would refuse to write.
+		if decoded, _, derr := imgio.Decode(counter.Bytes()); derr == nil {
+			if res, cerr := metric.Compare(img, decoded); cerr == nil {
+				if !math.IsInf(res.PSNR, 1) {
+					item.Metrics["webpPSNR"] = res.PSNR
+				}
+				item.Metrics["webpSSIM"] = res.SSIM
+			}
+		}
 	}
 
 	// Measured, not estimated: the file is actually resized and actually
@@ -190,7 +202,11 @@ func chooseBest(item *report.Item, head imgio.Header, o ScanOptions) {
 		}
 	}
 	if b, ok := item.Num("webpBytes"); ok && int64(b) < bestBytes {
-		best, bestBytes = "webp", int64(b)
+		if psnr, measured := item.Num("webpPSNR"); measured && psnr < o.MinPSNR {
+			// Below the floor img-webp would refuse: not a recommendation.
+		} else {
+			best, bestBytes = "webp", int64(b)
+		}
 	}
 
 	if best == "" || gain(item.BytesBefore, bestBytes) < o.MinGain {
@@ -293,6 +309,7 @@ func ScanSummary(rep *report.Report, o ScanOptions) {
 	if wideFiles > 0 {
 		widths := append([]int(nil), o.DisplayWidths...)
 		sort.Ints(widths)
+		structured := map[string]int64{}
 		for _, w := range widths {
 			b, ok := atWidth[strconv.Itoa(w)]
 			if !ok || b == 0 {
@@ -300,6 +317,16 @@ func ScanSummary(rep *report.Report, o ScanOptions) {
 			}
 			rep.Note("at %4dpx:  %s for the whole set (%s), %d files are wider than that",
 				w, report.Size(b), report.Percent(gain(total, b), total > 0), wideFiles)
+			structured[strconv.Itoa(w)] = b
+		}
+		if len(structured) > 0 {
+			if rep.Totals == nil {
+				rep.Totals = map[string]any{}
+			}
+			// Machine-readable twin of the "at Npx" note lines above: agents
+			// should not have to parse prose for byte counts.
+			rep.Totals["atWidth"] = structured
+			rep.Totals["atWidthTotal"] = total
 		}
 		rep.Note("           widths come from -widths; serving these needs srcset")
 	}

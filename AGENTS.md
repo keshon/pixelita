@@ -8,14 +8,16 @@ way is a constraint rather than a convenience.
 
 **A conversion that does not pay off is not performed.** Every candidate is
 encoded, measured against the original, and written only when the gain clears
-`-min-gain` and the fidelity does not fall below `-min-psnr`. This is why the
+`-min-gain` and the fidelity does not fall below `-min-psnr`/`-min-ssim`. Lossy
+`img-webp` enforces the floor the same way `img-quant` does, and `img-scan`
+recommends only what the converter would actually write. This is why the
 tools are safe to point at a directory, and it is the property to protect when
 changing anything.
 
 `-crop` means the same rectangle in `img-look` and `img-diff` on purpose: the
 unit of this work is a region, not a file, and looking at one and measuring it
-should not require restating it. Anything else that learns to work on part of an
-image takes the same flag with the same `x,y,w,h` spelling, and anything that
+should not require restating it. Both take sets (`x,y,w,h x,y,w,h`) — diff
+measures each, look renders one composite per region — and anything that
 *reports* a region prints it in that spelling too — `img-diff -worst` exists so
 coordinates are pasted rather than transcribed, and a test pins `Rect` and
 `ParseRect` to each other so the two can never drift apart.
@@ -63,6 +65,15 @@ The two tools that answer questions rather than change files — `img-diff` and
 needs verifying, measure with the first and look with the second; do not assert
 that output is correct without having done one of the two.
 
+`img-diff` resamples a resized pair (b to a, linear light, marked `resampled`)
+rather than failing — resize-then-check is the normal flow, `-strict-size`
+restores the failure. Directory pairs skip self-matches and see through the
+tools' own `-min` / `-320w` / `-800x600` suffixes, so an output directory
+pairs with its sources; when a source and an earlier product both claim one
+output, the same-format claimant wins. Writing outputs inside the scanned
+tree still pollutes rescans (scan counts its own products), so conversions go
+to a directory outside the sources.
+
 ## Where code goes
 
 All the work lives in `internal/ops`. A command under `cmd/` is a flag parser
@@ -72,7 +83,10 @@ share an implementation, they cannot drift, and "the UI does what the CLI does"
 stops being a promise anyone has to keep by hand.
 
 To add a tool: write the operation in `internal/ops`, then `cmd/img-<name>` as
-a thin caller, with `-json` and `-dry-run` from the first commit.
+a thin caller, with `-json` and `-dry-run` from the first commit. Every writing
+tool takes `-out-dir`. `pixelita` in `cmd/pixelita` forwards subcommands to the
+`img-*` binaries and holds no implementation. The JSON schema is `2`; per-width
+rollups live in `totals` as well as in the human notes.
 
 | Package | What it holds |
 |---|---|

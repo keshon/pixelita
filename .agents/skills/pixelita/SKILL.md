@@ -14,8 +14,11 @@ make it heavier. What does need asking is `-replace`, which overwrites sources.
 ## Before anything else
 
 ```bash
-img-scan -version
+pixelita scan -version
 ```
+
+One name finds all seven tools: `pixelita scan …` forwards to `img-scan`,
+`pixelita diff …` to `img-diff`, and so on. `bin/img-*` work directly too.
 
 Not `-h`. A help screen proves a binary exists, not that it is the one you think:
 a stale copy earlier in PATH answered `-h` perfectly and turned out to be missing
@@ -53,10 +56,11 @@ img-diff -worst 5 -levels original.png compressed.png
   with SSIM 0.923, structurally fine, that had lost 80% of its levels.
 
 `-crop` takes **several** rectangles at once, so a table of named places is one
-call:
+call — in `img-diff` and in `img-look` (one composite per region):
 
 ```bash
 img-diff -crop "1150,1560,220,90 1280,2816,256,256" -levels a.png b.png
+img-look -crop "1150,1560,220,90 1280,2816,256,256" a.png b.png
 ```
 
 Do not find regions by eye off a difference map and scale the coordinates back up
@@ -116,6 +120,7 @@ a statement you can make from a byte count.
   first panel's range, so the comparison stays honest.
 - **`-at '450,300 20,40'`** prints exact pixel values instead of a picture —
   cheaper and more precise when the question is "what colour exactly".
+  Add `-json` for the shared schema (`metrics.r/g/b/a/hex/x/y`).
 
 Transparency is composited onto a checkerboard. Output goes to a name derived
 from the inputs under the temp directory, never the working directory, and the
@@ -162,15 +167,18 @@ For judging someone else's file, `img-scan -quick -json` also gives:
 
 ## Output as data
 
-Every tool takes `-json` and emits one shape: `tool`, `schema`, `dryRun`,
-`items[]`, `summary`, `notes[]`. Per item: `path`, `output`, `status` (`done`,
+Every tool takes `-json` and emits one shape: `tool`, `schema` (`2`), `dryRun`,
+`items[]`, `summary`, `notes[]`, `totals` (rollups such as scan per-width bytes;
+`metrics.atWidth` carries them per file). Per item: `path`, `output`, `status` (`done`,
 `would`, `skipped`, `failed`), the byte counts, and `metrics` for anything
 tool-specific. Paths use forward slashes everywhere. Exit codes: `0` fine, `1`
 something failed or a threshold was missed, `2` the arguments were wrong.
 
 Guards, to loosen deliberately rather than by habit: `-min-gain` (10, or 1 for
-jpeg), `-min-psnr` (30 for `img-quant`), `-dry-run`, `-replace`, `-jobs`.
+jpeg), `-min-psnr` (30 for `img-quant` and lossy `img-webp`), `-min-ssim`,
+`-dry-run`, `-replace`, `-out-dir`, `-jobs`.
 `-replace` is the one to ask about; everything else is safe unattended.
+`-colours` aliases `-colors`; `-quality` aliases `-webp-quality` on scan.
 
 ## Traps
 
@@ -186,11 +194,13 @@ jpeg), `-min-psnr` (30 for `img-quant`), `-dry-run`, `-replace`, `-jobs`.
   usually loses. `-skip-palette=false` when a scan says otherwise.
 - **A deep scan is slow** because it encodes everything. Start with `-quick` on a
   large folder.
-- **`img-diff` needs equal dimensions.** It pairs two directories by file name
-  ignoring extension, which is right for checking PNGs against the WebP made from
-  them, but it cannot compare a resized pair.
+- **`img-diff` resamples resized pairs** (b to a, linear light, marked
+  `resampled`) instead of failing — resize then check is the normal flow.
+  `-strict-size` restores the failure.
 - **Output naming**: `-min` suffix by default, `-320w` for `img-resize -widths`;
-  `-out-dir` writes elsewhere.
+  `-out-dir` on every writing tool (`quant`, `jpeg`, `webp`, `resize`) writes
+  elsewhere; `-replace` overwrites. Write conversions **outside** the source
+  tree: a rescan counts its own products, and the numbers stop meaning anything.
 - **AVIF and JPEG XL do not exist here** and are not coming: no usable pure-Go
   encoder, and cgo would break the single-command build. Say so rather than
   reaching for another tool.

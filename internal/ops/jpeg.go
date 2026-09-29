@@ -3,6 +3,7 @@ package ops
 import (
 	"errors"
 	"os"
+	"path/filepath"
 
 	"github.com/keshon/pixelita/internal/jpegopt"
 	"github.com/keshon/pixelita/internal/report"
@@ -13,6 +14,7 @@ type JPEGOptions struct {
 	DryRun  bool
 	Replace bool
 	Suffix  string
+	OutDir  string
 }
 
 // DefaultJPEG asks for almost nothing, because there is nothing to weigh: the
@@ -54,6 +56,12 @@ func JPEG(path string, o JPEGOptions) report.Item {
 	item.Output = path
 	if !o.Replace {
 		item.Output = sibling(path, o.Suffix, ".jpg")
+	}
+	if o.OutDir != "" {
+		if err := os.MkdirAll(o.OutDir, 0o755); err != nil {
+			return fail(item, err, "output directory")
+		}
+		item.Output = filepath.Join(o.OutDir, filepath.Base(item.Output))
 	}
 	if o.DryRun {
 		item.Status = report.StatusWould

@@ -69,12 +69,13 @@ img-diff -min-psnr 35 ./src ./public/img # check that nothing broke
 
 ## The JSON contract
 
-Any tool given `-json` emits one object of the same shape:
+Any tool given `-json` emits one object of the same shape (`pixelita` forwards,
+so `pixelita scan -json …` works too):
 
 ```json
 {
   "tool": "img-quant",
-  "schema": "1",
+  "schema": "2",
   "dryRun": true,
   "items": [
     {
@@ -90,15 +91,21 @@ Any tool given `-json` emits one object of the same shape:
   "summary": {
     "files": 1, "changed": 1, "skipped": 0, "failed": 0,
     "bytesBefore": 253747, "bytesAfter": 72285, "gainPercent": 71.5
-  }
+  },
+  "totals": { "atWidth": { "640": 177600 }, "atWidthTotal": 2600000 }
 }
 ```
 
 `status` is one of `done`, `would`, `skipped`, `failed`. Numbers common to every
 tool are named fields; anything tool-specific lives in `metrics`, so the schema
 does not grow a column every time a tool learns to measure something. Paths use
-forward slashes on every platform. Exit codes: `0` fine, `1` something failed or
-a threshold was missed, `2` the arguments were wrong.
+forward slashes on every platform. `totals` carries machine-readable rollups
+(`img-scan` per-width byte counts) alongside the human `notes`. Exit codes:
+`0` fine, `1` something failed or a threshold was missed, `2` the arguments
+were wrong.
+
+One name finds them all: `pixelita scan …` forwards to `img-scan`, and so on
+for the seven tools. `bin/img-*` keep working directly.
 
 ## Photographs arrive rotated
 
@@ -267,6 +274,7 @@ fidelity win is not.**
 | `-min-psnr` | `30` | refuse to write below this fidelity in dB; `0` disables |
 | `-replace` | `false` | overwrite the source instead of writing beside it |
 | `-suffix` | `-min` | suffix for the output name |
+| `-out-dir` | — | write results here instead of next to the source |
 
 ---
 
@@ -305,6 +313,7 @@ that cared.
 | `-min-gain` | `1` | minimum size reduction in percent |
 | `-replace` | `false` | overwrite the source instead of writing beside it |
 | `-suffix` | `-min` | suffix for the output name |
+| `-out-dir` | — | write results here instead of next to the source |
 
 ---
 
@@ -332,7 +341,10 @@ image.
 | `-mode` | `lossy` | `lossy`, `lossless` or `near-lossless` |
 | `-skip-palette` | `true` | skip palette PNGs |
 | `-min-gain` | `10` | minimum size reduction in percent |
+| `-min-psnr` | `30` | refuse lossy below this fidelity in dB; `0` disables |
+| `-min-ssim` | `0` | refuse lossy below this SSIM; `0` disables |
 | `-keep-original` | `true` | keep the source file beside the `.webp` |
+| `-out-dir` | — | write results here instead of next to the source |
 
 ---
 
@@ -446,7 +458,13 @@ a tie across the smooth sky and 2.3 dB apart in the shadows, and only the
 per-region figures said so.
 
 Two directories are paired by file name ignoring the extension, so a folder of
-PNGs can be checked directly against the WebP files made from it.
+PNGs can be checked directly against the WebP files made from it — including
+the tools' own `-min` / `-320w` / `-800x600` suffixed outputs, which pair back
+with their sources (same-format claimant wins ties). Pairs of
+different dimensions are resampled (b to a, linear light) and marked
+`resampled` rather than failed — the audit flow is resize then check;
+`-strict-size` restores the failure. Self-matches (output dir inside the
+source tree) are skipped, not reported as identical.
 
 ## What it found on its very first run
 
@@ -492,10 +510,12 @@ minutes each, deleted each time. They are all the same operation.
 img-look hero.webp                            # any format in, one PNG to open
 img-look before.png after.png                 # stacked, labelled, a red rule between
 img-look -crop 700,380,460,210 a.png b.png    # the same region of both
+img-look -crop "0,0,64,64 100,300,64,64" a.png b.png  # several regions, one composite each
 img-look -max 0 -crop 0,0,64,64 icon.png      # native pixels, no scaling
 img-look -crop 4600,1380,180,105 -zoom 4 a.png b.png   # that region, four times life size
 img-look -crop 800,2400,500,250 -stats a.png b.png     # and what it averages to
 img-look -at '450,300 20,40' shot.png         # the numbers instead of the picture
+img-look -json -at '450,300 20,40' shot.png   # the numbers as JSON
 ```
 
 `-zoom` repeats pixels; it does not resample. The distinction matters because

@@ -9,6 +9,7 @@ import (
 	"github.com/keshon/pixelita/internal/imgio"
 	"github.com/keshon/pixelita/internal/metric"
 	"github.com/keshon/pixelita/internal/report"
+	"github.com/keshon/pixelita/internal/resize"
 )
 
 // This file is about sets of regions rather than one region at a time.
@@ -27,7 +28,7 @@ import (
 // figures. Not one of those calls was a mistake. The tools were shaped for a
 // question nobody asks.
 //
-// So the unit here is a set: find one with WorstRegions or FlattestRegions, or
+// So the unit here is a set: find one with WorstRegions, or
 // hand one over through -crop, and get a row per region carrying every number
 // that belongs on it.
 
@@ -183,8 +184,9 @@ func loadPair(a, b string) (*image.NRGBA, *image.NRGBA, error) {
 	}
 	x, y := imgio.ToNRGBA(imgA), imgio.ToNRGBA(imgB)
 	if x.Rect.Dx() != y.Rect.Dx() || x.Rect.Dy() != y.Rect.Dy() {
-		return nil, nil, fmt.Errorf("%w: %dx%d and %dx%d", metric.ErrSize,
-			x.Rect.Dx(), x.Rect.Dy(), y.Rect.Dx(), y.Rect.Dy())
+		// Same rule as Diff: a resized pair still asks about content, so
+		// resample rather than fail. Region coordinates are in a's pixels.
+		y = resize.Resize(y, x.Rect.Dx(), x.Rect.Dy(), resize.CatmullRom)
 	}
 	return x, y, nil
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 
 	"github.com/keshon/pixelita/internal/imgio"
 	"github.com/keshon/pixelita/internal/quant"
@@ -19,6 +20,7 @@ type QuantOptions struct {
 	DryRun  bool
 	Replace bool
 	Suffix  string
+	OutDir  string
 }
 
 func DefaultQuant() QuantOptions {
@@ -92,6 +94,12 @@ func Quant(path string, o QuantOptions) report.Item {
 	item.Output = path
 	if !o.Replace {
 		item.Output = sibling(path, o.Suffix, ".png")
+	}
+	if o.OutDir != "" {
+		if err := os.MkdirAll(o.OutDir, 0o755); err != nil {
+			return fail(item, err, "output directory")
+		}
+		item.Output = filepath.Join(o.OutDir, filepath.Base(item.Output))
 	}
 	if o.DryRun {
 		item.Status = report.StatusWould

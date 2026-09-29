@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/keshon/pixelita/internal/cli"
@@ -39,10 +40,11 @@ func main() {
 			"or levels (tonal headroom lost)")
 	flag.BoolVar(&levels, "levels", false,
 		"also report tonal levels per channel, before and after: the headroom left")
-	flag.IntVar(&tile, "tile", 256, "region size in pixels for -worst and -flattest")
+	flag.IntVar(&tile, "tile", 256, "region size in pixels for -worst")
 	flag.Float64Var(&opt.Amplify, "amplify", opt.Amplify, "how much to brighten the difference map")
 	flag.Float64Var(&opt.MinPSNR, "min-psnr", 0, "fail below this PSNR in dB, 0 disables")
 	flag.Float64Var(&opt.MinSSIM, "min-ssim", 0, "fail below this SSIM, 0 disables")
+	flag.BoolVar(&opt.StrictSize, "strict-size", false, "fail when dimensions differ instead of resampling b to a")
 	flag.BoolVar(&verbose, "v", false, "list identical pairs too")
 	flag.BoolVar(&showVersion, "version", false, "print which build this is and exit")
 	flag.BoolVar(&asJSON, "json", false, "emit the report as JSON")
@@ -53,7 +55,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "usage: img-diff [flags] <a> <b>\n\n")
 		fmt.Fprintf(os.Stderr, "Two files are compared directly. Two directories are paired up by\n")
 		fmt.Fprintf(os.Stderr, "file name ignoring the extension, so a folder of PNGs can be checked\n")
-		fmt.Fprintf(os.Stderr, "against the WebP files made from it.\n\n")
+		fmt.Fprintf(os.Stderr, "against the WebP files made from it.\n")
+		fmt.Fprintf(os.Stderr, "Pairs of different dimensions are resampled (b to a) and marked\n")
+		fmt.Fprintf(os.Stderr, "resampled; -strict-size fails instead.\n\n")
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nexamples:\n")
 		fmt.Fprintf(os.Stderr, "  img-diff before.png after.png\n")
@@ -76,8 +80,8 @@ func main() {
 		opt.Crop = rects[0]
 	}
 
-	// Three routes ask for a set of regions rather than one figure: find the
-	// damaged ones, find the smooth ones, or name them. They print the same
+	// Two routes ask for a set of regions rather than one figure: find the
+	// damaged ones, or name them. They print the same
 	// table, because the answer wanted is the same shape in every case — a row
 	// per place, with every number that belongs on that row.
 	if worst > 0 || len(rects) > 1 {
@@ -177,18 +181,49 @@ func pairUp(a, b string) ([]pair, error) {
 		return nil, err
 	}
 	// Match on the name without its extension: the point is to compare a source
-	// against whatever it was converted into.
+	// against whatever it was converted into. The tools' own naming (a -min
+	// suffix, resize -320w or -800x600 suffixes) is stripped as a fallback, so
+	// a directory of -min.png files still pairs with its sources — otherwise
+	// the verifier rejects exactly the outputs it exists to check.
 	index := map[string]string{}
 	for _, p := range right {
 		index[stem(p)] = p
+		if s := stripSuffix(stem(p)); s != stem(p) {
+			if _, taken := index[s]; !taken {
+				index[s] = p
+			}
+		}
 	}
 
 	var pairs []pair
+	bestFor := map[string]pair{} // one right file may attract several left
+	// names (a source and an earlier product of it); keep the same-format
+	// claimant, else the first in sorted order. Deterministic either way.
 	for _, p := range left {
-		if q, ok := index[stem(p)]; ok {
-			pairs = append(pairs, pair{p, q})
+		q, ok := index[stem(p)]
+		if !ok {
+			q, ok = index[stripSuffix(stem(p))]
 		}
+		if !ok {
+			continue
+		}
+		if sameFile(p, q) {
+			// Self-pair: same file walked on both sides (output dir inside
+			// the source tree). Comparing a file with itself is never what
+			// was asked; the "identical" rows drown the real comparisons.
+			continue
+		}
+		if cur, taken := bestFor[q]; taken {
+			if filepath.Ext(cur.a) == filepath.Ext(q) || filepath.Ext(p) != filepath.Ext(q) {
+				continue
+			}
+		}
+		bestFor[q] = pair{p, q}
 	}
+	for _, pr := range bestFor {
+		pairs = append(pairs, pr)
+	}
+	sort.Slice(pairs, func(i, j int) bool { return pairs[i].a < pairs[j].a })
 	if len(pairs) == 0 {
 		return nil, fmt.Errorf("no file names in common between %s and %s", a, b)
 	}
@@ -198,6 +233,62 @@ func pairUp(a, b string) ([]pair, error) {
 func stem(p string) string {
 	base := filepath.Base(p)
 	return strings.TrimSuffix(base, filepath.Ext(base))
+}
+
+// stripSuffix removes the output suffixes this toolkit's own tools produce,
+// so a verifier pairs sources with their products. Exact stems always win
+// (see pairUp): this is only the fallback.
+func stripSuffix(s string) string {
+	if strings.HasSuffix(s, "-min") {
+		return strings.TrimSuffix(s, "-min")
+	}
+	for i := len(s) - 1; i >= 0; i-- {
+		if s[i] == '-' {
+			tail := s[i+1:]
+			if isDims(tail) {
+				return s[:i]
+			}
+			break
+		}
+		if !(s[i] >= '0' && s[i] <= '9' || s[i] == 'x' || s[i] == 'w') {
+			break
+		}
+	}
+	return s
+}
+
+// isDims reports -320w or -800x600 tails.
+func isDims(tail string) bool {
+	if strings.HasSuffix(tail, "w") {
+		tail = strings.TrimSuffix(tail, "w")
+	} else {
+		parts := strings.Split(tail, "x")
+		if len(parts) != 2 {
+			return false
+		}
+		tail = parts[0] + parts[1]
+	}
+	if tail == "" {
+		return false
+	}
+	for i := 0; i < len(tail); i++ {
+		if tail[i] < '0' || tail[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func sameFile(a, b string) bool {
+	aa, err := filepath.Abs(a)
+	if err != nil {
+		return a == b
+	}
+	bb, err := filepath.Abs(b)
+	if err != nil {
+		return a == b
+	}
+	return aa == bb
 }
 
 // regionColumns is its own set rather than a slice of the one below. A region
@@ -210,9 +301,9 @@ func regionColumns(levels bool) []report.Column {
 	if levels {
 		out = append(out, report.Column{Title: "levels rgb", Width: 26,
 			Value: func(i report.Item) string {
-				b, ok1 := i.Metrics["levelsBefore"].([]int)
-				a, ok2 := i.Metrics["levels"].([]int)
-				if !ok1 || !ok2 {
+				b, ok1 := i.Ints("levelsBefore")
+				a, ok2 := i.Ints("levels")
+				if !ok1 || !ok2 || len(b) != 3 || len(a) != 3 {
 					return ""
 				}
 				return fmt.Sprintf("%d/%d/%d to %d/%d/%d",
@@ -302,6 +393,12 @@ var columns = []report.Column{
 	// reader who cannot see which was measured has been told half a fact.
 	{Title: "region", Width: 20, Value: func(i report.Item) string { return i.Str("crop") }},
 	{Title: "note", Width: 18, Value: func(i report.Item) string {
+		if r := i.Str("resampled"); r != "" {
+			if i.Reason != "" {
+				return "resampled " + r + ": " + i.Reason
+			}
+			return "resampled " + r
+		}
 		if i.Reason != "" {
 			return string(i.Status) + ": " + i.Reason
 		}

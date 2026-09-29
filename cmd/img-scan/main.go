@@ -33,8 +33,10 @@ func main() {
 	flag.BoolVar(&opt.Quick, "quick", false,
 		"read headers only: an inventory, without measuring what conversion would save")
 	flag.IntVar(&opt.Colors, "colors", opt.Colors, "palette size to test quantisation with")
+	flag.IntVar(&opt.Colors, "colours", opt.Colors, "alias for -colors")
 	flag.IntVar(&opt.Effort, "effort", opt.Effort, "1..10, effort for the quantisation estimate")
 	flag.IntVar(&opt.WebPQuality, "webp-quality", opt.WebPQuality, "quality to test WebP with")
+	flag.IntVar(&opt.WebPQuality, "quality", opt.WebPQuality, "alias for -webp-quality")
 	flag.Float64Var(&opt.MinGain, "min-gain", opt.MinGain,
 		"gain below this is not worth recommending, in percent")
 	flag.Float64Var(&opt.MinPSNR, "min-psnr", opt.MinPSNR,

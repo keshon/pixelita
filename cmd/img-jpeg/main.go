@@ -30,6 +30,8 @@ func main() {
 	flag.BoolVar(&opt.DryRun, "dry-run", false, "measure and report, write nothing")
 	flag.BoolVar(&opt.Replace, "replace", false, "overwrite the source file instead of writing next to it")
 	flag.StringVar(&opt.Suffix, "suffix", opt.Suffix, "suffix for the output name")
+	flag.StringVar(&opt.OutDir, "out-dir", "",
+		"write results here instead of next to the source")
 	flag.BoolVar(&verbose, "v", false, "list skipped files too")
 	flag.BoolVar(&showVersion, "version", false, "print which build this is and exit")
 	flag.BoolVar(&asJSON, "json", false, "emit the report as JSON")

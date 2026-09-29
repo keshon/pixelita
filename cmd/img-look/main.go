@@ -11,6 +11,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"image"
 	"os"
 
 	"github.com/keshon/pixelita/internal/cli"
@@ -91,12 +92,23 @@ func main() {
 		os.Exit(2)
 	}
 
-	// The probe is a different question and gives a different answer: text.
+	// The probe is a different question and gives a different answer: values.
+	// With -json it emits the shared report shape so agents parse one schema;
+	// without it prints text for a person.
 	if atSpec != "" {
 		points, err := ops.ParsePoints(atSpec)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(2)
+		}
+		if asJSON {
+			rep := report.New("img-look", "shown", true)
+			for _, path := range flag.Args() {
+				for _, l := range ops.ProbeItems(path, points) {
+					rep.Add(l)
+				}
+			}
+			os.Exit(rep.Emit(os.Stdout, probeColumns, true, false))
 		}
 		exit := 0
 		for _, path := range flag.Args() {
@@ -116,54 +128,62 @@ func main() {
 		os.Exit(exit)
 	}
 
-	var err error
-	if opt.Crop, err = ops.ParseRect(cropSpec); err != nil {
+	rects, err := ops.ParseRects(cropSpec)
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(2)
 	}
-
-	if opt.Out == "" {
-		opt.Out = ops.LookPath(flag.Args(), opt)
+	// One spelling everywhere: -crop reads "x,y,w,h x,y,w,h" here just as it
+	// does in img-diff, so a -worst table pastes directly. Several rectangles
+	// mean several views in one invocation, one composite per region.
+	if len(rects) == 0 {
+		rects = []image.Rectangle{{}}
 	}
-
-	img, items, err := ops.Look(flag.Args(), opt)
+	explicitOut := opt.Out != ""
 	rep := report.New("img-look", "shown", dryRun)
-	for _, it := range items {
-		rep.Add(it)
+	failed := false
+	for ri, r := range rects {
+		o := opt
+		o.Crop = r
+		if o.Out == "" || (len(rects) > 1 && explicitOut) {
+			o.Out = ops.LookPath(flag.Args(), o)
+		} else if len(rects) > 1 {
+			// Distinct files per region; LookPath already hashes the crop.
+			o.Out = ops.LookPath(flag.Args(), o)
+		}
+		_ = ri
+		img, items, err := ops.Look(flag.Args(), o)
+		for _, it := range items {
+			rep.Add(it)
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			failed = true
+			continue
+		}
+		// Every other tool here reads -dry-run as "report, write nothing".
+		if dryRun {
+			continue
+		}
+		out, size, err := ops.WriteLook(img, o.Out)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			failed = true
+			continue
+		}
+		// Tag just the items from this region with this composite. Items carry
+		// their crop in metrics, so a multi-region run stays attributable.
+		base := len(rep.Items) - len(items)
+		for i := range items {
+			rep.Items[base+i].Output = out
+		}
+		rep.Note("open %s — %dx%d, %s",
+			out, img.Rect.Dx(), img.Rect.Dy(), report.Size(size))
 	}
-	if err != nil {
-		// Still emit. A caller that asked for -json asked for a document, and
-		// a run where everything failed is exactly when it wants to know which
-		// file failed and why.
+	if failed {
 		rep.Emit(os.Stdout, columns, asJSON, false)
-		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
-
-	// Every other tool here reads -dry-run as "report, write nothing". Asking
-	// for numbers should not oblige anyone to produce a picture they did not
-	// want; the measurements above are already done.
-	if dryRun {
-		os.Exit(rep.Emit(os.Stdout, columns, asJSON, false))
-	}
-
-	out, size, err := ops.WriteLook(img, opt.Out)
-	if err != nil {
-		// Still emit: the measurements are valid, and a caller that asked for
-		// -json asked for a document.
-		rep.Emit(os.Stdout, columns, asJSON, false)
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
-	}
-	// Every input contributed to the one composite, so every item names it.
-	// That is what lets a caller reading -json find the file without parsing
-	// the sentence below.
-	for i := range rep.Items {
-		rep.Items[i].Output = out
-	}
-	rep.Note("open %s — %dx%d, %s",
-		out, img.Rect.Dx(), img.Rect.Dy(), report.Size(size))
-
 	os.Exit(rep.Emit(os.Stdout, columns, asJSON, false))
 }
 
@@ -183,13 +203,13 @@ var columns = []report.Column{
 	// uses here. It is what "this file can no longer be edited" means when
 	// stated as a measurement instead of an opinion.
 	{Title: "levels rgb", Width: 14, Right: true, Value: func(i report.Item) string {
-		if v, ok := i.Metrics["levels"].([]int); ok && len(v) == 3 {
+		if v, ok := i.Ints("levels"); ok && len(v) == 3 {
 			return fmt.Sprintf("%d/%d/%d", v[0], v[1], v[2])
 		}
 		return ""
 	}},
 	{Title: "luma", Width: 9, Right: true, Value: func(i report.Item) string {
-		if v, ok := i.Metrics["luma"].([]int); ok && len(v) == 2 {
+		if v, ok := i.Ints("luma"); ok && len(v) == 2 {
 			return fmt.Sprintf("%d..%d", v[0], v[1])
 		}
 		return ""
@@ -199,5 +219,34 @@ var columns = []report.Column{
 			return "failed: " + i.Reason
 		}
 		return i.Str("background")
+	}},
+}
+
+var probeColumns = []report.Column{
+	{Title: "file", Width: 30, Value: func(i report.Item) string { return i.Path }},
+	{Title: "x,y", Width: 12, Value: func(i report.Item) string {
+		x, ok1 := i.Num("x")
+		y, ok2 := i.Num("y")
+		if !ok1 || !ok2 {
+			return ""
+		}
+		return fmt.Sprintf("%.0f,%.0f", x, y)
+	}},
+	{Title: "rgba", Width: 16, Value: func(i report.Item) string {
+		r, ok1 := i.Num("r")
+		g, ok2 := i.Num("g")
+		b, ok3 := i.Num("b")
+		a, ok4 := i.Num("a")
+		if !ok1 || !ok2 || !ok3 || !ok4 {
+			return ""
+		}
+		return fmt.Sprintf("%.0f %.0f %.0f %.0f", r, g, b, a)
+	}},
+	{Title: "hex", Width: 8, Value: func(i report.Item) string { return i.Str("hex") }},
+	{Title: "note", Width: 20, Value: func(i report.Item) string {
+		if i.Status == report.StatusFailed {
+			return "failed: " + i.Reason
+		}
+		return ""
 	}},
 }

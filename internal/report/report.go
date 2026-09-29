@@ -15,7 +15,7 @@ import (
 )
 
 // Version is the schema version of the JSON output. Consumers should check it.
-const Version = "1"
+const Version = "2"
 
 type Status string
 
@@ -69,8 +69,24 @@ func (i Item) Num(key string) (float64, bool) {
 		return float64(v), true
 	case int:
 		return float64(v), true
+	case int8:
+		return float64(v), true
+	case int16:
+		return float64(v), true
+	case int32:
+		return float64(v), true
 	case int64:
 		return float64(v), true
+	case uint:
+		return float64(v), true
+	case uint32:
+		return float64(v), true
+	case uint64:
+		return float64(v), true
+	case json.Number:
+		if f, err := v.Float64(); err == nil {
+			return f, true
+		}
 	}
 	return 0, false
 }
@@ -79,6 +95,52 @@ func (i Item) Num(key string) (float64, bool) {
 func (i Item) Str(key string) string {
 	s, _ := i.Metrics[key].(string)
 	return s
+}
+
+// Ints reads a []int metric, tolerating the []any a JSON round-trip produces.
+// Agents parse -json output after it has been decoded once already, so a strict
+// []int assertion would silently drop levels and atWidth figures.
+func (i Item) Ints(key string) ([]int, bool) {
+	switch v := i.Metrics[key].(type) {
+	case []int:
+		return v, true
+	case []int64:
+		out := make([]int, len(v))
+		for j, n := range v {
+			out[j] = int(n)
+		}
+		return out, true
+	case []any:
+		out := make([]int, 0, len(v))
+		for _, e := range v {
+			f, ok := numAny(e)
+			if !ok {
+				return nil, false
+			}
+			out = append(out, int(f))
+		}
+		return out, true
+	}
+	return nil, false
+}
+
+func numAny(v any) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case float32:
+		return float64(n), true
+	case int:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case uint64:
+		return float64(n), true
+	case json.Number:
+		f, err := n.Float64()
+		return f, err == nil
+	}
+	return 0, false
 }
 
 type Summary struct {
@@ -92,12 +154,13 @@ type Summary struct {
 }
 
 type Report struct {
-	Tool    string   `json:"tool"`
-	Schema  string   `json:"schema"`
-	DryRun  bool     `json:"dryRun"`
-	Items   []Item   `json:"items"`
-	Summary Summary  `json:"summary"`
-	Notes   []string `json:"notes,omitempty"`
+	Tool    string         `json:"tool"`
+	Schema  string         `json:"schema"`
+	DryRun  bool           `json:"dryRun"`
+	Items   []Item         `json:"items"`
+	Summary Summary        `json:"summary"`
+	Notes   []string       `json:"notes,omitempty"`
+	Totals  map[string]any `json:"totals,omitempty"`
 
 	// Verb is how this tool describes a finished item, as a past participle:
 	// "written", "converted", "resized". A dry run turns it into "would be

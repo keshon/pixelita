@@ -32,6 +32,10 @@ func main() {
 		"skip palette PNGs: quantised images rarely gain and often grow")
 	flag.Float64Var(&opt.MinGain, "min-gain", opt.MinGain,
 		"minimum size reduction in percent, below that the original is kept")
+	flag.Float64Var(&opt.MinPSNR, "min-psnr", opt.MinPSNR,
+		"refuse lossy below this fidelity in dB, 0 disables the check")
+	flag.Float64Var(&opt.MinSSIM, "min-ssim", opt.MinSSIM,
+		"refuse lossy below this SSIM, 0 disables the check")
 	flag.BoolVar(&opt.DryRun, "dry-run", false, "measure and report, write nothing")
 	flag.BoolVar(&opt.KeepOriginal, "keep-original", opt.KeepOriginal,
 		"keep the source file next to the .webp")
@@ -85,12 +89,18 @@ func main() {
 }
 
 var columns = []report.Column{
-	{Title: "file", Width: 48, Value: func(i report.Item) string { return i.Path }},
+	{Title: "file", Width: 40, Value: func(i report.Item) string { return i.Path }},
 	{Title: "type", Width: 8, Value: func(i report.Item) string { return i.Str("colourType") }},
 	{Title: "before", Width: 10, Right: true, Value: func(i report.Item) string { return report.Size(i.BytesBefore) }},
 	{Title: "after", Width: 10, Right: true, Value: func(i report.Item) string { return report.Size(i.BytesAfter) }},
 	{Title: "gain", Width: 6, Right: true, Value: func(i report.Item) string {
 		return report.Percent(i.GainPercent, i.BytesAfter > 0)
 	}},
-	{Title: "action", Width: 22, Value: func(i report.Item) string { return report.Action(i, "converted") }},
+	{Title: "psnr", Width: 8, Right: true, Value: func(i report.Item) string {
+		if v, ok := i.Num("psnr"); ok {
+			return fmt.Sprintf("%.1f dB", v)
+		}
+		return ""
+	}},
+	{Title: "action", Width: 24, Value: func(i report.Item) string { return report.Action(i, "converted") }},
 }

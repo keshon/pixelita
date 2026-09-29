@@ -207,6 +207,39 @@ func Probe(path string, points []image.Point) ([]string, error) {
 	return out, nil
 }
 
+// ProbeItems answers -at in the shared report shape, so -json parses the same
+// way everywhere. Probe stays for human text output.
+func ProbeItems(path string, points []image.Point) []report.Item {
+	img, _, raw, err := imgio.Load(path)
+	base := report.Item{Path: path, Metrics: map[string]any{}}
+	if err != nil {
+		return []report.Item{fail(base, err, "decode error")}
+	}
+	base.Metrics["bytes"] = int64(len(raw))
+	src := imgio.ToNRGBA(img)
+	b := src.Rect
+	out := make([]report.Item, 0, len(points))
+	for _, pt := range points {
+		item := report.Item{Path: path, Metrics: map[string]any{
+			"x": pt.X, "y": pt.Y,
+		}}
+		if !pt.Add(b.Min).In(b) {
+			item = fail(item, fmt.Errorf("outside the image (%dx%d)", b.Dx(), b.Dy()), "outside image")
+			out = append(out, item)
+			continue
+		}
+		c := src.NRGBAAt(b.Min.X+pt.X, b.Min.Y+pt.Y)
+		item.Metrics["r"] = int(c.R)
+		item.Metrics["g"] = int(c.G)
+		item.Metrics["b"] = int(c.B)
+		item.Metrics["a"] = int(c.A)
+		item.Metrics["hex"] = fmt.Sprintf("#%02x%02x%02x", c.R, c.G, c.B)
+		item.Status = report.StatusDone
+		out = append(out, item)
+	}
+	return out
+}
+
 // magnify replicates each pixel into an n by n block.
 //
 // Deliberately not resize.Resize with a nearest filter. That path converts to

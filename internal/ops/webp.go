@@ -3,12 +3,14 @@ package ops
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 
 	webp "github.com/mayahiro/go-webp"
 
 	"github.com/keshon/pixelita/internal/imgio"
+	"github.com/keshon/pixelita/internal/metric"
 	"github.com/keshon/pixelita/internal/report"
 )
 
@@ -17,6 +19,8 @@ type WebPOptions struct {
 	Mode         string // lossy, lossless or near-lossless
 	SkipPalette  bool
 	MinGain      float64
+	MinPSNR      float64
+	MinSSIM      float64
 	DryRun       bool
 	KeepOriginal bool
 	// OutDir is the same flag img-resize has. Its absence here cost a reader
@@ -27,7 +31,7 @@ type WebPOptions struct {
 }
 
 func DefaultWebP() WebPOptions {
-	return WebPOptions{Quality: 90, Mode: "lossy", SkipPalette: true, MinGain: 10, KeepOriginal: true}
+	return WebPOptions{Quality: 90, Mode: "lossy", SkipPalette: true, MinGain: 10, MinPSNR: 30, KeepOriginal: true}
 }
 
 // EncoderOptions translates our options into the encoder's.
@@ -104,6 +108,30 @@ func WebP(path string, o WebPOptions) report.Item {
 
 	item.BytesAfter = int64(encoded.Len())
 	item.GainPercent = gain(item.BytesBefore, item.BytesAfter)
+	// Lossy without a fidelity floor ships silent damage: the file is smaller
+	// and worse, and nothing says so. Measure the candidate the same way
+	// img-diff would, refuse below the floor, and report the numbers so
+	// -dry-run shows why. Lossless candidates have infinite PSNR and pass.
+	if o.Mode == "lossy" && (o.MinPSNR > 0 || o.MinSSIM > 0) {
+		if decoded, _, err := imgio.Decode(encoded.Bytes()); err == nil {
+			if res, err := metric.Compare(img, decoded); err == nil {
+				if !math.IsInf(res.PSNR, 1) {
+					item.Metrics["psnr"] = res.PSNR
+				}
+				item.Metrics["ssim"] = res.SSIM
+				if o.MinPSNR > 0 && res.PSNR < o.MinPSNR {
+					item.Status = report.StatusSkipped
+					item.Reason = fmt.Sprintf("%.1f dB below %.0f", res.PSNR, o.MinPSNR)
+					return item
+				}
+				if o.MinSSIM > 0 && res.SSIM < o.MinSSIM {
+					item.Status = report.StatusSkipped
+					item.Reason = fmt.Sprintf("%.3f below %.3f ssim", res.SSIM, o.MinSSIM)
+					return item
+				}
+			}
+		}
+	}
 	if item.GainPercent < o.MinGain {
 		item.Status = report.StatusSkipped
 		item.Reason = "gain " + percent(item.GainPercent)

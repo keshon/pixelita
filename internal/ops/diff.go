@@ -10,14 +10,16 @@ import (
 	"github.com/keshon/pixelita/internal/imgio"
 	"github.com/keshon/pixelita/internal/metric"
 	"github.com/keshon/pixelita/internal/report"
+	"github.com/keshon/pixelita/internal/resize"
 )
 
 type DiffOptions struct {
-	Out     string          // where to write the difference map, empty for none
-	Crop    image.Rectangle // measure only this region of both; empty means all
-	Amplify float64
-	MinPSNR float64
-	MinSSIM float64
+	Out        string          // where to write the difference map, empty for none
+	Crop       image.Rectangle // measure only this region of both; empty means all
+	Amplify    float64
+	MinPSNR    float64
+	MinSSIM    float64
+	StrictSize bool // fail on dimension mismatch instead of resampling b to a
 }
 
 func DefaultDiff() DiffOptions { return DiffOptions{Amplify: 8} }
@@ -33,6 +35,21 @@ func Diff(a, b string, o DiffOptions) report.Item {
 	imgB, _, rawB, err := imgio.Load(b)
 	if err != nil {
 		return fail(item, err, "decode error")
+	}
+	// Resized pairs are the normal audit flow (resize, then check), not an
+	// error: resample b to a in linear light and say so, so the comparison
+	// still answers "did the content survive". -strict-size restores the old
+	// failure for callers who want dimensions enforced.
+	if imgA.Bounds().Dx() != imgB.Bounds().Dx() || imgA.Bounds().Dy() != imgB.Bounds().Dy() {
+		if o.StrictSize {
+			ab, bb := imgA.Bounds(), imgB.Bounds()
+			return fail(item, fmt.Errorf("%w: %dx%d and %dx%d", metric.ErrSize,
+				ab.Dx(), ab.Dy(), bb.Dx(), bb.Dy()), "size mismatch")
+		}
+		bw, bh := imgA.Bounds().Dx(), imgA.Bounds().Dy()
+		item.Metrics["resampled"] = fmt.Sprintf("%dx%d to %dx%d",
+			imgB.Bounds().Dx(), imgB.Bounds().Dy(), bw, bh)
+		imgB = resize.Resize(imgio.ToNRGBA(imgB), bw, bh, resize.CatmullRom)
 	}
 	// Only when the whole file is the subject. Measuring one region and
 	// printing "saved 69%" next to it describes a different thing entirely, and
