@@ -1,5 +1,65 @@
 # Agent-facing evaluation
 
+## Milestone-two protocol (fixed before implementation)
+
+The milestone-two comparison uses one generated corpus: a flat RGBA PNG, a
+photographic RGB PNG, a baseline JPEG, a progressive JPEG, two inputs with the
+same basename, and one unsupported text file. Keep the corpus outside the
+repository and retain the generator or exact source commands with the results.
+
+Run these six scenarios on the milestone-one baseline and the completed
+milestone, repeating each agent-driven run three times where practical:
+
+1. discover the installed build and supported capabilities;
+2. inspect the mixed corpus and produce an optimization plan;
+3. preview, apply, and verify safe same-format optimization;
+4. request an explicit WebP conversion and an explicit resize variant;
+5. recover from a flag after a path, unsupported input, and corrupt input;
+6. reject basename collisions, existing destinations, replacement, and source
+   deletion before an unauthorized write.
+
+Compare four workflows: the milestone-one specialist commands, the canonical
+interface without the skill, the canonical interface with the shipped skill,
+and an agent-written Pillow script. For every run record completion, source
+preservation, unsafe behavior, Pixelita or shell invocations, invalid calls,
+recovery turns, elapsed wall time, input and output bytes, PSNR/SSIM where
+applicable, and setup or dependency work. Treat each file as one observation
+for size-quality-time comparisons; do not require one implementation to win
+every file. The standard inspect, optimize-preview, optimize-apply case passes
+the weak-model gate only when it completes in at most three Pixelita invocations
+without reading the long skill.
+
+Record skipped or unavailable comparisons as limitations, not zero-valued
+measurements. Automated repository tests cover deterministic contracts; model
+trials and Pillow timing remain manual evaluation evidence.
+
+## Milestone-two verification status
+
+The milestone-one commit `698306e` passed `go test ./...`, `go vet ./...`, and
+the eight-binary build before implementation. The milestone-two checkout passes
+the same three gates plus focused tests for interspersed flags, JSON argument
+errors, collision and existing-destination preflight, atomic verification
+failure, cross-input output overlap, explicit deletion, plan/apply routing
+equivalence, deterministic plan ordering, capability output, and shared
+candidate verdicts.
+
+Windows end-to-end checks exercised all five canonical commands, a specialist
+command with flags after its path, and rejection of
+`img-webp -keep-original=false`. A baseline JPEG produced by the Go JPEG encoder
+was previewed as `would`, applied as `done` with `jpeg-huffman`, and compared at
+`-min-psnr 200` as pixel-identical. The standard preview, apply, and verify path
+therefore takes three Pixelita invocations.
+
+The deterministic Pillow 12.3.0 comparison is recorded in
+[`eval/README.md`](../eval/README.md). Pillow made both PNGs smaller, at lower
+measured fidelity. On the baseline JPEG, Pixelita produced a pixel-identical
+319,773-byte result while Pillow produced a 319,755-byte result at 71.26 dB.
+Pillow made the progressive JPEG 5.35% larger; Pixelita skipped it.
+
+Repeated weak-model trials and the skill/no-skill comparison have not been
+executed because no weak-model runner is available in the evaluation
+environment. No comparative agent-performance result is claimed.
+
 ## Scope and baseline
 
 This evaluation measures command discovery, workflow selection, argument
@@ -25,18 +85,18 @@ uncommitted changes, while the evaluated source was the September 29 commit
 `43ebea6`. `pixelita` was not on `PATH`. The documented version check detects
 this, but only after an agent already knows the check exists.
 
-## Verdict
+## Milestone-one baseline verdict
 
 The image operations and measurement commands passed the tested workflows. The
-interface is not yet model-agnostic. A weaker model still depends on the
-repository skill for routing and safety rules. The current `pixelita` binary
+baseline interface was not model-agnostic. A weaker model still depended on the
+repository skill for routing and safety rules. The baseline `pixelita` binary
 only forwards to seven specialist binaries; it does not implement the target
 inspect, plan, execute, and verify workflow. Implementing that canonical
 workflow is the main remaining product milestone.
 
 The seven commands remain useful specialist tools for humans. Weaker agents and
 future codec additions need a stable task interface organized around inspect,
-plan, execute, and verify. Codecs belong in a capability registry. Specialist
+plan, execute, and verify. Codecs belong in a compile-time capability catalog. Specialist
 commands remain thin compatibility adapters.
 
 ## Evaluation matrix
@@ -50,7 +110,7 @@ commands remain thin compatibility adapters.
 | Argument recovery | Mixed | The commands reject unsupported explicit files, invalid ranges/formats, and conflicting resize modes. Flags after a positional argument still fail as a bogus path. |
 | Result interpretation | Mixed | Metrics are rich, but summary counters describe outcomes rather than unique sources and quick scans report zero summary bytes while notes contain the inventory total. |
 | Task routing | Weak | `pixelita` forwards to codec/operation commands; it does not accept a goal, compare strategies, serialize a plan, or explain a route. |
-| GUI readiness | Partial | Operations are shared in `internal/ops`, but there is no stable public typed API, planner, or capability registry. |
+| GUI readiness | Partial | Operations are shared in `internal/ops`, but there is no stable public typed API, planner, or capability catalog. |
 | Format extensibility | Weak | The visible model remains a flat tool list. More format-named binaries would compound discovery and routing cost. |
 | Determinism/composability | Mixed | File collection is sorted and JSON paths are stable; basename collisions and prose-only recovery knowledge break reliable composition. |
 
@@ -74,7 +134,7 @@ commands remain thin compatibility adapters.
 - Lossless JPEG optimization verified pixel identity in tests and in a fixture
   comparison.
 
-## Confirmed defects and hazards
+## Confirmed baseline defects and hazards
 
 ### P0: output collisions are not preflighted
 
@@ -151,22 +211,22 @@ The evaluated baseline tracked six input/output images under `temp/`, totalling
   and both shipped skill copies.
 - The tracked `temp/` payload is removed and `/temp/` is ignored.
 
-## Recommended sequence
+## Milestone-one recommended sequence
 
 1. Fix output planning, collision detection, destructive intent, and atomic
    write/delete behavior before expanding codecs.
 2. Define typed inspect/plan/execute/verify requests and results in the engine.
-3. Add a capability registry with parameter schemas, loss/metadata behavior,
+3. Add a compile-time capability catalog with loss and metadata behavior,
    availability, and verification requirements.
-4. Turn `pixelita` into the canonical task interface with serializable plans and
-   explained routing. Keep `img-*` as adapters.
+4. Turn `pixelita` into the canonical task interface with internal deterministic
+   plans and explained routing. Keep `img-*` as adapters.
 5. Move filesystem discovery, naming, validation, and policy out of command
    packages and test canonical/specialist equivalence.
 6. Expose build, schema, and capabilities as structured discovery. Reduce the
    skill to hints rather than required operating knowledge.
 7. Build the GUI directly on the typed engine or stable API.
 
-## Automated agent-evaluation cases
+## Original automated agent-evaluation cases
 
 Run each case with a weaker model and without the Pixelita skill. Score task
 success, tool-call count, invalid-call count, recovery turns, unstructured prose

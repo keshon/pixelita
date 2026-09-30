@@ -1,9 +1,8 @@
 // Package report is the shared output contract for every tool in this repo.
 //
-// The tools are meant to be driven by a person at a terminal, by a web front
-// end, and by an agent, and only the first of those can read a formatted table.
-// So every tool builds the same structure and renders it either as a table or
-// as JSON, and neither rendering knows anything the other does not.
+// The tools are meant to be driven by a person at a terminal or by an agent.
+// Every tool builds the same structure and renders it either as a table or as
+// JSON, and neither rendering knows anything the other does not.
 package report
 
 import (
@@ -26,6 +25,21 @@ const (
 	StatusFailed  Status = "failed"
 )
 
+// NextAction is a shell-independent recovery step. Command and Args are kept
+// separate so callers never need to parse or quote a command string.
+type NextAction struct {
+	Command string   `json:"command"`
+	Args    []string `json:"args"`
+}
+
+type BuildInfo struct {
+	Revision      string `json:"revision,omitempty"`
+	Time          string `json:"time,omitempty"`
+	Modified      bool   `json:"modified"`
+	ModuleVersion string `json:"moduleVersion,omitempty"`
+	Available     bool   `json:"available"`
+}
+
 // Item is one file's outcome. Numbers common to every tool are named fields;
 // anything tool-specific goes in Metrics, so the schema does not have to grow a
 // column every time a tool learns something new.
@@ -33,7 +47,10 @@ type Item struct {
 	Path        string         `json:"path"`
 	Output      string         `json:"output,omitempty"`
 	Status      Status         `json:"status"`
+	Code        string         `json:"code,omitempty"`
 	Reason      string         `json:"reason,omitempty"`
+	Hint        string         `json:"hint,omitempty"`
+	NextAction  *NextAction    `json:"nextAction,omitempty"`
 	BytesBefore int64          `json:"bytesBefore,omitempty"`
 	BytesAfter  int64          `json:"bytesAfter,omitempty"`
 	GainPercent float64        `json:"gainPercent,omitempty"`
@@ -154,13 +171,16 @@ type Summary struct {
 }
 
 type Report struct {
-	Tool    string         `json:"tool"`
-	Schema  string         `json:"schema"`
-	DryRun  bool           `json:"dryRun"`
-	Items   []Item         `json:"items"`
-	Summary Summary        `json:"summary"`
-	Notes   []string       `json:"notes,omitempty"`
-	Totals  map[string]any `json:"totals,omitempty"`
+	Tool         string         `json:"tool"`
+	Schema       string         `json:"schema"`
+	DryRun       bool           `json:"dryRun"`
+	Items        []Item         `json:"items"`
+	Summary      Summary        `json:"summary"`
+	Notes        []string       `json:"notes,omitempty"`
+	Totals       map[string]any `json:"totals,omitempty"`
+	Capabilities any            `json:"capabilities,omitempty"`
+	Build        *BuildInfo     `json:"build,omitempty"`
+	NextAction   *NextAction    `json:"nextAction,omitempty"`
 
 	// Verb is how this tool describes a finished item, as a past participle:
 	// "written", "converted", "resized". A dry run turns it into "would be
@@ -199,6 +219,17 @@ func (r *Report) Finish() {
 			s.Skipped++
 		}
 	}
+	for i := range r.Items {
+		if r.Items[i].Code != "" {
+			continue
+		}
+		switch r.Items[i].Status {
+		case StatusFailed:
+			r.Items[i].Code = "operation_failed"
+		case StatusSkipped:
+			r.Items[i].Code = "not_selected"
+		}
+	}
 	if s.BytesBefore > 0 {
 		s.GainPercent = (1 - float64(s.BytesAfter)/float64(s.BytesBefore)) * 100
 	}
@@ -209,15 +240,28 @@ func (r *Report) Finish() {
 // the output is the same on every platform and reads sanely in a browser.
 func (r *Report) WriteJSON(w io.Writer) error {
 	out := *r
+	out.NextAction = normalizedAction(r.NextAction)
 	out.Items = make([]Item, len(r.Items))
 	for i, it := range r.Items {
 		it.Path = filepath.ToSlash(it.Path)
 		it.Output = filepath.ToSlash(it.Output)
+		it.NextAction = normalizedAction(it.NextAction)
 		out.Items[i] = it
 	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(out)
+}
+
+func normalizedAction(action *NextAction) *NextAction {
+	if action == nil {
+		return nil
+	}
+	out := &NextAction{Command: action.Command, Args: make([]string, len(action.Args))}
+	for i, arg := range action.Args {
+		out.Args[i] = filepath.ToSlash(arg)
+	}
+	return out
 }
 
 // Column describes one table column.

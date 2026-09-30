@@ -30,10 +30,35 @@ type ResizeOptions struct {
 	Suffix              string
 	Replace             bool
 	DryRun              bool
+	Overwrite           bool
 }
 
 func DefaultResize() ResizeOptions {
 	return ResizeOptions{Fit: "inside", Filter: resize.CatmullRom, Format: "keep", JPEGQuality: 90}
+}
+
+func PlanResizeDestinations(path string, o ResizeOptions) ([]Destination, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	head, err := imgio.ReadHeader(raw)
+	if err != nil {
+		return nil, err
+	}
+	sizes, _ := o.Targets(head.Width, head.Height)
+	ext := ".png"
+	if head.Format == "jpeg" || o.Format == "jpeg" {
+		ext = ".jpg"
+	}
+	if o.Format == "png" {
+		ext = ".png"
+	}
+	out := make([]Destination, 0, len(sizes))
+	for _, size := range sizes {
+		out = append(out, Destination{Source: path, Output: o.OutputPath(path, ext, size[0], size[1])})
+	}
+	return out, nil
 }
 
 // Targets works out every size a file should be written at, and returns nothing
@@ -98,9 +123,7 @@ func Resize(path string, o ResizeOptions) []report.Item {
 
 	sizes, reason := o.Targets(sw, sh)
 	if len(sizes) == 0 {
-		base.Status = report.StatusSkipped
-		base.Reason = reason
-		return []report.Item{base}
+		return []report.Item{skip(base, "no_resize_needed", reason)}
 	}
 
 	out := make([]report.Item, 0, len(sizes))
@@ -119,9 +142,7 @@ func resizeOne(src *image.NRGBA, base report.Item, path, format string, w, h int
 	sw, sh := src.Rect.Dx(), src.Rect.Dy()
 
 	if (w > sw || h > sh) && !o.AllowUpscale {
-		item.Status = report.StatusSkipped
-		item.Reason = "would upscale"
-		return item
+		return skip(item, "upscale_not_permitted", "would upscale")
 	}
 
 	dst := resize.Resize(src, w, h, o.Filter)
@@ -144,13 +165,11 @@ func resizeOne(src *image.NRGBA, base report.Item, path, format string, w, h int
 		item.Status = report.StatusWould
 		return item
 	}
-	if dir := filepath.Dir(item.Output); dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return fail(item, err, "write error")
-		}
-	}
-	if err := os.WriteFile(item.Output, encoded, 0o644); err != nil {
-		return fail(item, err, "write error")
+	if err := AtomicWrite(item.Output, encoded, o.Overwrite || o.Replace, func(data []byte) error {
+		_, _, err := imgio.Decode(data)
+		return err
+	}); err != nil {
+		return failCode(item, err, "write_failed", "write error")
 	}
 	item.Status = report.StatusDone
 	return item
@@ -163,9 +182,11 @@ func resizeOne(src *image.NRGBA, base report.Item, path, format string, w, h int
 func EncodeAs(img *image.NRGBA, format string, o ResizeOptions, metrics map[string]any) ([]byte, string, error) {
 	target := o.Format
 	if target == "keep" || target == "" {
-		target = "png"
-		if format == "jpeg" {
-			target = "jpeg"
+		switch format {
+		case "png", "jpeg":
+			target = format
+		default:
+			return nil, "", fmt.Errorf("cannot preserve %s output; choose png or jpeg explicitly", format)
 		}
 	}
 

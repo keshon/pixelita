@@ -1,10 +1,8 @@
 // Package ops holds what the tools actually do to a file.
 //
-// Every command under cmd/ is a flag parser wrapped around one of these, and so
-// is the web interface. Keeping the work here rather than in the commands is
-// what turns "the interface does the same thing as the command line" from a
-// promise into a property of the code: there is one implementation to be right
-// or wrong about, not two that can drift.
+// Every command under cmd/ is a flag parser wrapped around one of these.
+// Keeping the work here makes shared behavior a property of the code rather
+// than a promise between separate implementations.
 package ops
 
 import (
@@ -18,9 +16,21 @@ import (
 // fail marks an item as failed, keeping the reason short for a table cell and
 // the full error for whoever wants to read it.
 func fail(item report.Item, err error, reason string) report.Item {
+	return failCode(item, err, "operation_failed", reason)
+}
+
+func failCode(item report.Item, err error, code, reason string) report.Item {
 	item.Status = report.StatusFailed
+	item.Code = code
 	item.Reason = reason
 	item.Error = err.Error()
+	return item
+}
+
+func skip(item report.Item, code, reason string) report.Item {
+	item.Status = report.StatusSkipped
+	item.Code = code
+	item.Reason = reason
 	return item
 }
 

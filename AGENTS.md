@@ -13,7 +13,7 @@ The single build command and no-cgo constraint are product requirements.
 Pixelita has three clients: terminal users, agents, and a future GUI. They must
 share typed operations, safety policy, schemas, routing, and verification.
 
-The target workflow is:
+The canonical workflow is:
 
 1. inspect inputs;
 2. plan for an explicit goal;
@@ -21,13 +21,13 @@ The target workflow is:
 4. verify the result.
 
 Formats and codecs are capabilities within that workflow. New formats extend a
-capability registry instead of creating a new product model.
+small compile-time capability catalog instead of creating a new product model.
 
-This target is not implemented yet. The current `pixelita` binary dispatches to
-seven specialist `img-*` binaries. It does not accept a goal, build a plan,
-select capabilities, explain routing, execute the plan, and verify the result
-through one task model. Implementing that canonical interface is the main
-remaining product milestone. See [`docs/architecture.md`](docs/architecture.md).
+`pixelita inspect`, `optimize`, `compare`, `view`, and `capabilities` implement
+this workflow through an internal typed plan and a static capability catalog.
+`optimize` previews by default and writes only with `--apply`. The plan is an
+internal execution contract, not a public serialized format. See
+[`docs/architecture.md`](docs/architecture.md).
 
 Keep the existing `img-*` commands as thin Unix-style wrappers and compatibility
 aliases. They may adapt presentation, but must not own policy or behavior that
@@ -44,8 +44,8 @@ A conversion is written only when it clears `-min-gain` and its enabled
 that the corresponding converter would write.
 
 Source overwrite and deletion require explicit user approval. `-replace`
-overwrites a source. `img-webp -keep-original=false` deletes a source after a
-successful conversion and is also destructive.
+overwrites a source. `-delete-source` deletes only after a verified WebP write;
+`-keep-original=false` is rejected.
 
 Plan all output paths before parallel writes. Duplicate destinations are
 errors. Failed writes must not remove sources or leave partial outputs.
@@ -88,6 +88,7 @@ errors. Directories may contain unrelated files and may produce an empty result.
 
 | Package | Responsibility |
 |---|---|
+| `internal/engine` | Typed plans, canonical routing, and the static capability catalog |
 | `internal/ops` | Image operations and current per-file decisions |
 | `internal/report` | Table and JSON report envelope |
 | `internal/quant` | Histogram, median cut, k-means, and dithered remap |
@@ -128,7 +129,8 @@ QUANT_BENCH_IMAGE=/path/to/photo.png go test ./internal/quant -bench Phases
 - Decode-time EXIF orientation is canonical for decoded operations.
   `img-jpeg` retains the original orientation tag because it does not decode.
 - Specialist binaries retain the `img-` prefix.
-- The `web-ui` branch remains parked until explicitly resumed.
+- Do not use the `web-ui` branch. Build any future GUI from scratch after the
+  engine contracts stabilize.
 
 ## Style
 

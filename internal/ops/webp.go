@@ -1,7 +1,6 @@
 package ops
 
 import (
-	"bytes"
 	"fmt"
 	"math"
 	"os"
@@ -10,7 +9,6 @@ import (
 	webp "github.com/mayahiro/go-webp"
 
 	"github.com/keshon/pixelita/internal/imgio"
-	"github.com/keshon/pixelita/internal/metric"
 	"github.com/keshon/pixelita/internal/report"
 )
 
@@ -23,6 +21,9 @@ type WebPOptions struct {
 	MinSSIM      float64
 	DryRun       bool
 	KeepOriginal bool
+	DeleteSource bool
+	Overwrite    bool
+	Output       string
 	// OutDir is the same flag img-resize has. Its absence here cost a reader
 	// thirty-four megabytes of copying to get a result into a scratch
 	// directory: a set of tools whose flags differ between them makes people
@@ -32,6 +33,14 @@ type WebPOptions struct {
 
 func DefaultWebP() WebPOptions {
 	return WebPOptions{Quality: 90, Mode: "lossy", SkipPalette: true, MinGain: 10, MinPSNR: 30, KeepOriginal: true}
+}
+
+func (o WebPOptions) OutputPath(path string) string {
+	out := sibling(path, "", ".webp")
+	if o.OutDir != "" {
+		out = filepath.Join(o.OutDir, filepath.Base(out))
+	}
+	return out
 }
 
 // EncoderOptions translates our options into the encoder's.
@@ -63,11 +72,11 @@ func WebPBytes(path string, o WebPOptions) ([]byte, int64, string, error) {
 	if err != nil {
 		return nil, 0, "decode error", err
 	}
-	var buf bytes.Buffer
-	if err := webp.Encode(&buf, img, enc); err != nil {
+	evaluated, err := EvaluateWebPCandidate(img, int64(len(raw)), enc, CandidatePolicy{})
+	if err != nil {
 		return nil, int64(len(raw)), "encode error", err
 	}
-	return buf.Bytes(), int64(len(raw)), "", nil
+	return evaluated.Encoded, int64(len(raw)), "", nil
 }
 
 // WebP converts an image to WebP, and writes it only when that pays off.
@@ -87,9 +96,7 @@ func WebP(path string, o WebPOptions) report.Item {
 		item.Metrics["width"] = head.Width
 		item.Metrics["height"] = head.Height
 		if o.SkipPalette && head.ColourType == "palette" {
-			item.Status = report.StatusSkipped
-			item.Reason = "palette"
-			return item
+			return skip(item, "palette_png_skipped", "palette")
 		}
 	}
 
@@ -101,62 +108,43 @@ func WebP(path string, o WebPOptions) report.Item {
 	if err != nil {
 		return fail(item, err, "decode error")
 	}
-	var encoded bytes.Buffer
-	if err := webp.Encode(&encoded, img, enc); err != nil {
+	evaluated, err := EvaluateWebPCandidate(img, item.BytesBefore, enc,
+		CandidatePolicy{MinGain: o.MinGain, MinPSNR: o.MinPSNR, MinSSIM: o.MinSSIM})
+	if err != nil {
 		return fail(item, err, "encode error")
 	}
 
-	item.BytesAfter = int64(encoded.Len())
+	item.BytesAfter = evaluated.Candidate.BytesAfter
 	item.GainPercent = gain(item.BytesBefore, item.BytesAfter)
-	// Lossy without a fidelity floor ships silent damage: the file is smaller
-	// and worse, and nothing says so. Measure the candidate the same way
-	// img-diff would, refuse below the floor, and report the numbers so
-	// -dry-run shows why. Lossless candidates have infinite PSNR and pass.
-	if o.Mode == "lossy" && (o.MinPSNR > 0 || o.MinSSIM > 0) {
-		if decoded, _, err := imgio.Decode(encoded.Bytes()); err == nil {
-			if res, err := metric.Compare(img, decoded); err == nil {
-				if !math.IsInf(res.PSNR, 1) {
-					item.Metrics["psnr"] = res.PSNR
-				}
-				item.Metrics["ssim"] = res.SSIM
-				if o.MinPSNR > 0 && res.PSNR < o.MinPSNR {
-					item.Status = report.StatusSkipped
-					item.Reason = fmt.Sprintf("%.1f dB below %.0f", res.PSNR, o.MinPSNR)
-					return item
-				}
-				if o.MinSSIM > 0 && res.SSIM < o.MinSSIM {
-					item.Status = report.StatusSkipped
-					item.Reason = fmt.Sprintf("%.3f below %.3f ssim", res.SSIM, o.MinSSIM)
-					return item
-				}
-			}
-		}
+	if !math.IsInf(evaluated.Candidate.PSNR, 1) {
+		item.Metrics["psnr"] = evaluated.Candidate.PSNR
 	}
-	if item.GainPercent < o.MinGain {
-		item.Status = report.StatusSkipped
-		item.Reason = "gain " + percent(item.GainPercent)
-		return item
+	item.Metrics["ssim"] = evaluated.Candidate.SSIM
+	if evaluated.Verdict.Code == "fidelity_below_minimum" {
+		return skip(item, evaluated.Verdict.Code, "candidate below fidelity threshold")
+	}
+	if evaluated.Verdict.Code == "gain_below_minimum" {
+		return skip(item, "gain_below_minimum", "gain "+percent(item.GainPercent))
 	}
 
-	item.Output = sibling(path, "", ".webp")
-	if o.OutDir != "" {
-		if err := os.MkdirAll(o.OutDir, 0o755); err != nil {
-			return fail(item, err, "output directory")
-		}
-		item.Output = filepath.Join(o.OutDir, filepath.Base(item.Output))
+	item.Output = o.OutputPath(path)
+	if o.Output != "" {
+		item.Output = o.Output
 	}
 	if o.DryRun {
 		item.Status = report.StatusWould
 		return item
 	}
-	if err := os.WriteFile(item.Output, encoded.Bytes(), 0o644); err != nil {
-		return fail(item, err, "write error")
+	if err := AtomicWrite(item.Output, evaluated.Encoded, o.Overwrite, func(data []byte) error {
+		_, _, err := imgio.Decode(data)
+		return err
+	}); err != nil {
+		return failCode(item, err, "write_failed", "write error")
 	}
 	item.Status = report.StatusDone
-	if !o.KeepOriginal {
+	if o.DeleteSource {
 		if err := os.Remove(path); err != nil {
-			item.Error = err.Error()
-			item.Reason = "original kept"
+			return failCode(item, err, "source_delete_failed", "destination written; source kept")
 		}
 	}
 	return item

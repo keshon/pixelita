@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"runtime/debug"
+
+	"github.com/keshon/pixelita/internal/report"
 )
 
 // Version reports which build this is.
@@ -19,10 +21,26 @@ import (
 // records without anything being passed to it, so there is nothing to remember
 // at release time and nothing to go stale on its own.
 func Version(w io.Writer, tool string) {
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
+	build := BuildInfo()
+	if !build.Available {
 		fmt.Fprintf(w, "%s (build information unavailable)\n", tool)
 		return
+	}
+	if build.Revision == "" {
+		fmt.Fprintf(w, "%s %s (built outside a repository)\n", tool, build.ModuleVersion)
+		return
+	}
+	mark := ""
+	if build.Modified {
+		mark = " +uncommitted changes"
+	}
+	fmt.Fprintf(w, "%s %s%s %s\n", tool, build.Revision, mark, build.Time)
+}
+
+func BuildInfo() report.BuildInfo {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return report.BuildInfo{}
 	}
 	var revision, when string
 	dirty := false
@@ -37,15 +55,10 @@ func Version(w io.Writer, tool string) {
 		}
 	}
 	if revision == "" {
-		fmt.Fprintf(w, "%s %s (built outside a repository)\n", tool, info.Main.Version)
-		return
+		return report.BuildInfo{ModuleVersion: info.Main.Version, Available: true}
 	}
 	if len(revision) > 12 {
 		revision = revision[:12]
 	}
-	mark := ""
-	if dirty {
-		mark = " +uncommitted changes"
-	}
-	fmt.Fprintf(w, "%s %s%s %s\n", tool, revision, mark, when)
+	return report.BuildInfo{Revision: revision, Time: when, Modified: dirty, ModuleVersion: info.Main.Version, Available: true}
 }

@@ -9,7 +9,6 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -23,6 +22,7 @@ import (
 )
 
 func main() {
+	cli.ConfigureDefaultFlags()
 	opt := ops.DefaultScan()
 	var verbose, asJSON bool
 	var widthSpec string
@@ -60,7 +60,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  img-scan -quick -v ./public/img\n")
 		fmt.Fprintf(os.Stderr, "  img-scan -json ./public/img > report.json\n")
 	}
-	flag.Parse()
+	cli.ParseDefaultFlags("img-scan")
 
 	opt.DisplayWidths = nil
 	for _, f := range strings.Split(widthSpec, ",") {
@@ -70,8 +70,7 @@ func main() {
 		}
 		w, err := strconv.Atoi(f)
 		if err != nil || w <= 0 {
-			fmt.Fprintf(os.Stderr, "error: -widths takes positive numbers, got %q\n", f)
-			os.Exit(2)
+			cli.ExitArgument("img-scan", "invalid_option", fmt.Errorf("-widths takes positive numbers, got %q", f), nil)
 		}
 		opt.DisplayWidths = append(opt.DisplayWidths, w)
 	}
@@ -81,30 +80,21 @@ func main() {
 		return
 	}
 	if opt.Colors < 2 || opt.Colors > 256 {
-		fmt.Fprintln(os.Stderr, "error: -colors must be between 2 and 256")
-		os.Exit(2)
+		cli.ExitArgument("img-scan", "invalid_option", fmt.Errorf("-colors must be between 2 and 256"), nil)
 	}
 	if opt.Effort < 1 || opt.Effort > 10 {
-		fmt.Fprintln(os.Stderr, "error: -effort must be between 1 and 10")
-		os.Exit(2)
+		cli.ExitArgument("img-scan", "invalid_option", fmt.Errorf("-effort must be between 1 and 10"), nil)
 	}
 	if opt.WebPQuality < 1 || opt.WebPQuality > 100 {
-		fmt.Fprintln(os.Stderr, "error: -webp-quality must be between 1 and 100")
-		os.Exit(2)
+		cli.ExitArgument("img-scan", "invalid_option", fmt.Errorf("-webp-quality must be between 1 and 100"), nil)
 	}
 	if opt.MinGain < 0 || opt.MinPSNR < 0 {
-		fmt.Fprintln(os.Stderr, "error: -min-gain and -min-psnr cannot be negative")
-		os.Exit(2)
+		cli.ExitArgument("img-scan", "invalid_threshold", fmt.Errorf("-min-gain and -min-psnr cannot be negative"), nil)
 	}
 
 	files, err := cli.Roots(flag.Args(), listFile, imgio.Extensions...)
 	if err != nil {
-		if errors.Is(err, cli.ErrNoInput) {
-			flag.Usage()
-		} else {
-			fmt.Fprintln(os.Stderr, "error:", err)
-		}
-		os.Exit(2)
+		cli.ExitInputArgument("img-scan", err)
 	}
 
 	rep := report.New("img-scan", "improved", true)

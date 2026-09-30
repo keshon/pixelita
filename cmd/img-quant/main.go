@@ -1,8 +1,8 @@
 // Command img-quant reduces PNG images to a palette, the way pngquant does, and
 // writes the result only when it is both smaller and still faithful.
 //
-// The work itself lives in internal/ops, which is also what the web interface
-// calls. This file is the flag parser and the table.
+// The work itself lives in internal/ops. This file is the flag parser and the
+// table.
 package main
 
 import (
@@ -17,6 +17,7 @@ import (
 )
 
 func main() {
+	cli.ConfigureDefaultFlags()
 	opt := ops.DefaultQuant()
 	var verbose, asJSON bool
 	var showVersion bool
@@ -33,6 +34,7 @@ func main() {
 		"refuse to write below this fidelity in dB, 0 disables the check")
 	flag.BoolVar(&opt.DryRun, "dry-run", false, "measure and report, write nothing")
 	flag.BoolVar(&opt.Replace, "replace", false, "overwrite the source file instead of writing next to it")
+	flag.BoolVar(&opt.Overwrite, "overwrite", false, "replace an existing destination")
 	flag.StringVar(&opt.Suffix, "suffix", opt.Suffix, "suffix for the output name")
 	flag.StringVar(&opt.OutDir, "out-dir", "",
 		"write results here instead of next to the source")
@@ -52,37 +54,40 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  img-quant -colors 128 -replace ./public/img/site\n")
 		fmt.Fprintf(os.Stderr, "  img-quant -json -dry-run ./public/img\n")
 	}
-	flag.Parse()
+	cli.ParseDefaultFlags("img-quant")
 
 	if showVersion {
 		cli.Version(os.Stdout, "img-quant")
 		return
 	}
 	if opt.Colors < 2 || opt.Colors > 256 {
-		fmt.Fprintln(os.Stderr, "error: -colors must be between 2 and 256")
-		os.Exit(2)
+		cli.ExitArgument("img-quant", "invalid_option", fmt.Errorf("-colors must be between 2 and 256"), nil)
 	}
 	if opt.Dither < 0 || opt.Dither > 1 {
-		fmt.Fprintln(os.Stderr, "error: -dither must be between 0 and 1")
-		os.Exit(2)
+		cli.ExitArgument("img-quant", "invalid_option", fmt.Errorf("-dither must be between 0 and 1"), nil)
 	}
 	if opt.Effort < 1 || opt.Effort > 10 {
-		fmt.Fprintln(os.Stderr, "error: -effort must be between 1 and 10")
-		os.Exit(2)
+		cli.ExitArgument("img-quant", "invalid_option", fmt.Errorf("-effort must be between 1 and 10"), nil)
 	}
 	if opt.MinGain < 0 || opt.MinPSNR < 0 {
-		fmt.Fprintln(os.Stderr, "error: -min-gain and -min-psnr cannot be negative")
-		os.Exit(2)
+		cli.ExitArgument("img-quant", "invalid_threshold", fmt.Errorf("-min-gain and -min-psnr cannot be negative"), nil)
 	}
 
 	files, err := cli.Roots(flag.Args(), listFile, ".png")
 	if err != nil {
-		if errors.Is(err, cli.ErrNoInput) {
-			flag.Usage()
-		} else {
-			fmt.Fprintln(os.Stderr, "error:", err)
+		cli.ExitInputArgument("img-quant", err)
+	}
+	planned := make([]ops.Destination, 0, len(files))
+	for _, path := range files {
+		planned = append(planned, ops.Destination{Source: path, Output: opt.OutputPath(path)})
+	}
+	if err := ops.PreflightDestinations(planned, opt.Overwrite, opt.Replace); err != nil {
+		var pe *ops.PlanError
+		code := "invalid_destination"
+		if errors.As(err, &pe) {
+			code = pe.Code
 		}
-		os.Exit(2)
+		cli.ExitArgument("img-quant", code, err, nil)
 	}
 
 	rep := report.New("img-quant", "written", opt.DryRun)

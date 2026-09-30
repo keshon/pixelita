@@ -5,22 +5,36 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/keshon/pixelita/internal/imgio"
 	"github.com/keshon/pixelita/internal/jpegopt"
 	"github.com/keshon/pixelita/internal/report"
 )
 
 type JPEGOptions struct {
-	MinGain float64
-	DryRun  bool
-	Replace bool
-	Suffix  string
-	OutDir  string
+	MinGain   float64
+	DryRun    bool
+	Replace   bool
+	Suffix    string
+	OutDir    string
+	Output    string
+	Overwrite bool
 }
 
 // DefaultJPEG asks for almost nothing, because there is nothing to weigh: the
 // picture cannot change, so any saving at all is worth taking.
 func DefaultJPEG() JPEGOptions {
 	return JPEGOptions{MinGain: 1, Suffix: "-min"}
+}
+
+func (o JPEGOptions) OutputPath(path string) string {
+	out := path
+	if !o.Replace {
+		out = sibling(path, o.Suffix, ".jpg")
+	}
+	if o.OutDir != "" {
+		out = filepath.Join(o.OutDir, filepath.Base(out))
+	}
+	return out
 }
 
 // JPEG rewrites a JPEG with Huffman tables fitted to its own contents.
@@ -36,9 +50,7 @@ func JPEG(path string, o JPEGOptions) report.Item {
 	out, err := jpegopt.Optimise(raw)
 	if err != nil {
 		if errors.Is(err, jpegopt.ErrProgressive) {
-			item.Status = report.StatusSkipped
-			item.Reason = "progressive"
-			return item
+			return skip(item, "progressive_jpeg_unsupported", "progressive")
 		}
 		return fail(item, err, "not readable as baseline jpeg")
 	}
@@ -48,27 +60,22 @@ func JPEG(path string, o JPEGOptions) report.Item {
 	item.Metrics["lossless"] = true
 
 	if item.GainPercent < o.MinGain {
-		item.Status = report.StatusSkipped
-		item.Reason = "gain " + percent(item.GainPercent)
-		return item
+		return skip(item, "gain_below_minimum", "gain "+percent(item.GainPercent))
 	}
 
-	item.Output = path
-	if !o.Replace {
-		item.Output = sibling(path, o.Suffix, ".jpg")
-	}
-	if o.OutDir != "" {
-		if err := os.MkdirAll(o.OutDir, 0o755); err != nil {
-			return fail(item, err, "output directory")
-		}
-		item.Output = filepath.Join(o.OutDir, filepath.Base(item.Output))
+	item.Output = o.OutputPath(path)
+	if o.Output != "" {
+		item.Output = o.Output
 	}
 	if o.DryRun {
 		item.Status = report.StatusWould
 		return item
 	}
-	if err := os.WriteFile(item.Output, out, 0o644); err != nil {
-		return fail(item, err, "write error")
+	if err := AtomicWrite(item.Output, out, o.Overwrite || o.Replace, func(data []byte) error {
+		_, _, err := imgio.Decode(data)
+		return err
+	}); err != nil {
+		return failCode(item, err, "write_failed", "write error")
 	}
 	item.Status = report.StatusDone
 	return item

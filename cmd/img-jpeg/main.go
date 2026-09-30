@@ -19,6 +19,7 @@ import (
 )
 
 func main() {
+	cli.ConfigureDefaultFlags()
 	opt := ops.DefaultJPEG()
 	var verbose, asJSON bool
 	var showVersion bool
@@ -29,6 +30,7 @@ func main() {
 		"minimum size reduction in percent, below that the original is kept")
 	flag.BoolVar(&opt.DryRun, "dry-run", false, "measure and report, write nothing")
 	flag.BoolVar(&opt.Replace, "replace", false, "overwrite the source file instead of writing next to it")
+	flag.BoolVar(&opt.Overwrite, "overwrite", false, "replace an existing destination")
 	flag.StringVar(&opt.Suffix, "suffix", opt.Suffix, "suffix for the output name")
 	flag.StringVar(&opt.OutDir, "out-dir", "",
 		"write results here instead of next to the source")
@@ -46,7 +48,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  img-jpeg -dry-run ./public/img\n")
 		fmt.Fprintf(os.Stderr, "  img-jpeg -replace ./public/img/photos\n")
 	}
-	flag.Parse()
+	cli.ParseDefaultFlags("img-jpeg")
 
 	if showVersion {
 		cli.Version(os.Stdout, "img-jpeg")
@@ -55,12 +57,19 @@ func main() {
 
 	files, err := cli.Roots(flag.Args(), listFile, ".jpg", ".jpeg")
 	if err != nil {
-		if errors.Is(err, cli.ErrNoInput) {
-			flag.Usage()
-		} else {
-			fmt.Fprintln(os.Stderr, "error:", err)
+		cli.ExitInputArgument("img-jpeg", err)
+	}
+	planned := make([]ops.Destination, 0, len(files))
+	for _, path := range files {
+		planned = append(planned, ops.Destination{Source: path, Output: opt.OutputPath(path)})
+	}
+	if err := ops.PreflightDestinations(planned, opt.Overwrite, opt.Replace); err != nil {
+		var pe *ops.PlanError
+		code := "invalid_destination"
+		if errors.As(err, &pe) {
+			code = pe.Code
 		}
-		os.Exit(2)
+		cli.ExitArgument("img-jpeg", code, err, nil)
 	}
 
 	rep := report.New("img-jpeg", "written", opt.DryRun)

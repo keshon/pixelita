@@ -61,10 +61,10 @@ func LookDir() string { return filepath.Join(os.TempDir(), "pixelita") }
 // worth more than a unique one. That was wrong in practice: taking several
 // views of the same pair — the whole thing, then a region, then that region
 // magnified — silently destroyed each previous one, and the caller had to
-// remember -out every time or lose the work. Looking twice at the *same* thing
-// should still overwrite, so the name is derived from the inputs and the
-// options rather than from a counter or a clock: repeat a command and it lands
-// on the same file, change anything and it does not.
+// remember -out every time or lose the work. The name is derived from the
+// inputs and options rather than from a counter or a clock: repeat a command
+// and it identifies the existing destination, which requires -overwrite;
+// change anything and it selects a different path.
 func LookPath(paths []string, o LookOptions) string {
 	h := fnv.New32a()
 	for _, p := range paths {
@@ -523,7 +523,7 @@ func compose(panels []*image.NRGBA, across bool) *image.NRGBA {
 //
 // The path comes back absolute because the next thing to happen to it is that
 // something else opens it, quite possibly from another directory.
-func WriteLook(img *image.NRGBA, path string) (string, int64, error) {
+func WriteLook(img *image.NRGBA, path string, overwrite bool) (string, int64, error) {
 	if strings.TrimSpace(path) == "" {
 		path = filepath.Join(LookDir(), "look.png")
 	}
@@ -534,12 +534,10 @@ func WriteLook(img *image.NRGBA, path string) (string, int64, error) {
 	if err != nil {
 		return "", 0, err
 	}
-	if dir := filepath.Dir(path); dir != "." && dir != "" {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return "", 0, err
-		}
-	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := AtomicWrite(path, data, overwrite, func(data []byte) error {
+		_, _, err := imgio.Decode(data)
+		return err
+	}); err != nil {
 		return "", 0, err
 	}
 	return path, int64(len(data)), nil

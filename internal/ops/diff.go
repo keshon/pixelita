@@ -20,6 +20,7 @@ type DiffOptions struct {
 	MinPSNR    float64
 	MinSSIM    float64
 	StrictSize bool // fail on dimension mismatch instead of resampling b to a
+	Overwrite  bool
 }
 
 func DefaultDiff() DiffOptions { return DiffOptions{Amplify: 8} }
@@ -148,5 +149,8 @@ func writeDiffMap(a, b image.Image, o DiffOptions) error {
 			return err
 		}
 	}
-	return os.WriteFile(o.Out, data, 0o644)
+	return AtomicWrite(o.Out, data, o.Overwrite, func(data []byte) error {
+		_, _, err := imgio.Decode(data)
+		return err
+	})
 }

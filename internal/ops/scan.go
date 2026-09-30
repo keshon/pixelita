@@ -1,7 +1,6 @@
 package ops
 
 import (
-	"bytes"
 	"fmt"
 	"math"
 	"os"
@@ -11,7 +10,6 @@ import (
 	webp "github.com/mayahiro/go-webp"
 
 	"github.com/keshon/pixelita/internal/imgio"
-	"github.com/keshon/pixelita/internal/metric"
 	"github.com/keshon/pixelita/internal/quant"
 	"github.com/keshon/pixelita/internal/report"
 	"github.com/keshon/pixelita/internal/resize"
@@ -111,6 +109,7 @@ func Scan(path string, o ScanOptions) report.Item {
 		// "skipped: not measured" looks like something went wrong with a file
 		// that is in fact perfectly fine — it just was not encoded.
 		item.Status = report.StatusSkipped
+		item.Code = "headers_only"
 		item.Reason = "headers only"
 		return item
 	}
@@ -143,23 +142,17 @@ func Scan(path string, o ScanOptions) report.Item {
 		}
 	}
 
-	var counter bytes.Buffer
-	err = webp.Encode(&counter, img, &webp.Options{
+	webpCandidate, err := EvaluateWebPCandidate(img, item.BytesBefore, &webp.Options{
 		Quality: o.WebPQuality, Compression: webp.CompressionLossy, Mode: webp.ModeDefault,
-	})
+	}, CandidatePolicy{MinGain: o.MinGain, MinPSNR: o.MinPSNR})
 	if err == nil {
-		item.Metrics["webpBytes"] = int64(counter.Len())
-		item.Metrics["webpGain"] = gain(item.BytesBefore, int64(counter.Len()))
-		// The estimate must clear the same fidelity floor the converter
-		// enforces, or scan recommends what webp would refuse to write.
-		if decoded, _, derr := imgio.Decode(counter.Bytes()); derr == nil {
-			if res, cerr := metric.Compare(img, decoded); cerr == nil {
-				if !math.IsInf(res.PSNR, 1) {
-					item.Metrics["webpPSNR"] = res.PSNR
-				}
-				item.Metrics["webpSSIM"] = res.SSIM
-			}
+		item.Metrics["webpBytes"] = webpCandidate.Candidate.BytesAfter
+		item.Metrics["webpGain"] = webpCandidate.Verdict.Gain
+		item.Metrics["webpAccepted"] = webpCandidate.Verdict.Accept
+		if !math.IsInf(webpCandidate.Candidate.PSNR, 1) {
+			item.Metrics["webpPSNR"] = webpCandidate.Candidate.PSNR
 		}
+		item.Metrics["webpSSIM"] = webpCandidate.Candidate.SSIM
 	}
 
 	// Measured, not estimated: the file is actually resized and actually
@@ -197,20 +190,21 @@ func chooseBest(item *report.Item, head imgio.Header, o ScanOptions) {
 
 	if b, ok := item.Num("quantBytes"); ok && int64(b) < bestBytes {
 		psnr, lossy := item.Num("quantPSNR")
-		if !lossy || psnr >= o.MinPSNR {
+		v := EvaluateCandidate(Candidate{BytesBefore: item.BytesBefore, BytesAfter: int64(b), PSNR: psnr, HasPSNR: lossy},
+			CandidatePolicy{MinGain: o.MinGain, MinPSNR: o.MinPSNR})
+		if v.Accept {
 			best, bestBytes = "quant", int64(b)
 		}
 	}
 	if b, ok := item.Num("webpBytes"); ok && int64(b) < bestBytes {
-		if psnr, measured := item.Num("webpPSNR"); measured && psnr < o.MinPSNR {
-			// Below the floor img-webp would refuse: not a recommendation.
-		} else {
+		if accepted, _ := item.Metrics["webpAccepted"].(bool); accepted {
 			best, bestBytes = "webp", int64(b)
 		}
 	}
 
-	if best == "" || gain(item.BytesBefore, bestBytes) < o.MinGain {
+	if best == "" {
 		item.Status = report.StatusSkipped
+		item.Code = "no_beneficial_strategy"
 		item.Reason = "optimal"
 		return
 	}

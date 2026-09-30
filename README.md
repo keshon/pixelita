@@ -7,10 +7,10 @@ Pixelita follows three rules:
 
 1. **Measure before writing.** Every writing tool has `-dry-run`. Candidates
    below the configured gain or fidelity thresholds are skipped.
-2. **One engine, multiple interfaces.** The current commands share the
-   operations in `internal/ops` and emit one JSON schema. The intended CLI,
-   agent interface, and GUI share typed requests, policy, results, and
-   verification rather than parsing or duplicating one another.
+2. **One engine, multiple interfaces.** The canonical CLI and specialist
+   commands share operations, candidate verdicts, safety checks, and JSON
+   schema 2. A future GUI will call the same typed engine rather than parse CLI
+   text.
 3. **Measured claims.** Performance and quality claims below include the
    reference tool and corpus.
 
@@ -24,9 +24,6 @@ Pixelita follows three rules:
 | [`img-diff`](cmd/img-diff) | compares two images: PSNR, SSIM, a difference map |
 | [`img-look`](cmd/img-look) | makes an image **visible**: one PNG to open, or the pixel values |
 
-A web interface exists on the `web-ui` branch and is not part of the set yet:
-the CSS kit it is built on has not settled.
-
 ## Build
 
 ```bash
@@ -36,14 +33,34 @@ go build -o bin/ ./cmd/...
 Image operations live in [`internal/ops`](internal/ops). Each current command
 parses flags, calls an operation, and renders a report.
 
-## Architecture direction
+## Canonical tasks
 
-The current `pixelita` binary dispatches to seven `img-*` commands. It does not
-yet accept a goal, create a plan, select a capability, explain routing, execute,
-and verify through one task model. That canonical task interface is the main
-remaining product milestone. The existing commands will remain as thin
-Unix-style wrappers. A future GUI will call the same typed engine or a stable
-API.
+`pixelita` exposes five task commands: `inspect`, `optimize`, `compare`, `view`,
+and `capabilities`. Optimization creates an internal deterministic plan,
+preflights the whole batch, and previews measured decisions by default. Add
+`--apply` to execute the same routes. Same-format JPEG optimization and PNG
+palette quantization are automatic; WebP conversion and resize variants require
+`--format webp` and `--widths` respectively.
+
+Preview JSON includes a structured `nextAction` for applying the same request.
+`capabilities --json` includes the build revision and schema version.
+
+Every destination is planned before work starts. Existing files require
+`--overwrite`; replacing a source requires `--replace`; deleting a source after
+a verified WebP write requires `--delete-source`.
+
+```bash
+pixelita inspect ./public/img --json
+pixelita optimize ./public/img --json
+pixelita optimize ./public/img --apply --out-dir ./dist
+pixelita capabilities --json
+```
+
+The seven `img-*` binaries remain direct specialist tools, and their legacy
+`pixelita scan`, `pixelita quant`, and related aliases still dispatch to them.
+A future GUI and stable public Go API remain out of scope. The GUI will be built
+from scratch after these contracts stabilize; no existing UI branch is part of
+the architecture.
 
 See
 [`docs/architecture.md`](docs/architecture.md) for the implemented/target
@@ -77,8 +94,8 @@ img-diff -min-psnr 35 ./src ./public/img # check that nothing broke
 
 ## The JSON contract
 
-Any tool given `-json` emits one object of the same shape (`pixelita` forwards,
-so `pixelita scan -json …` works too):
+Canonical and specialist tools accept flags before or after paths. Commands
+given `-json` emit schema 2, including structured argument failures:
 
 ```json
 {
@@ -104,16 +121,18 @@ so `pixelita scan -json …` works too):
 }
 ```
 
-`status` is one of `done`, `would`, `skipped`, `failed`. Numbers common to every
-tool are named fields; anything tool-specific lives in `metrics`, so the schema
+`status` is one of `done`, `would`, `skipped`, `failed`. Every skipped or failed
+item has a stable `code`; recoverable argument failures may also include
+`nextAction: {"command": ..., "args": [...]}`. Numbers common to every tool are
+named fields; anything tool-specific lives in `metrics`, so the schema
 does not grow a column every time a tool learns to measure something. Paths use
 forward slashes on every platform. `totals` carries machine-readable rollups
 (`img-scan` per-width byte counts) alongside the human `notes`. Exit codes:
 `0` completed (including deliberate threshold skips), `1` at least one item
 failed, `2` the arguments were wrong.
 
-`pixelita scan …` forwards to `img-scan`; the other six subcommands work the
-same way. The `img-*` binaries also run directly.
+Legacy `pixelita scan …` forwards to `img-scan`; the other six specialist
+aliases work the same way. The `img-*` binaries also run directly.
 
 ## Photographs arrive rotated
 
@@ -260,6 +279,7 @@ a consistent fidelity increase.
 | `-min-gain` | `10` | minimum size reduction in percent |
 | `-min-psnr` | `30` | refuse to write below this fidelity in dB; `0` disables |
 | `-replace` | `false` | overwrite the source instead of writing beside it |
+| `-overwrite` | `false` | replace an existing destination |
 | `-suffix` | `-min` | suffix for the output name |
 | `-out-dir` | — | write results here instead of next to the source |
 
@@ -295,6 +315,7 @@ Progressive JPEGs are skipped.
 |---|---|---|
 | `-min-gain` | `1` | minimum size reduction in percent |
 | `-replace` | `false` | overwrite the source instead of writing beside it |
+| `-overwrite` | `false` | replace an existing destination |
 | `-suffix` | `-min` | suffix for the output name |
 | `-out-dir` | — | write results here instead of next to the source |
 
@@ -324,7 +345,9 @@ header before decoding.
 | `-min-gain` | `10` | minimum size reduction in percent |
 | `-min-psnr` | `30` | refuse lossy below this fidelity in dB; `0` disables |
 | `-min-ssim` | `0` | refuse lossy below this SSIM; `0` disables |
-| `-keep-original` | `true` | keep the source; `false` deletes it after success and is destructive |
+| `-delete-source` | `false` | explicitly delete the source after the destination is written and verified |
+| `-keep-original` | `true` | compatibility flag; `false` is rejected with structured recovery |
+| `-overwrite` | `false` | replace an existing destination |
 | `-out-dir` | — | write results here instead of next to the source |
 
 ---
@@ -361,6 +384,7 @@ img-resize -width 400 -height 400 -fit cover avatar.jpg
 | `-filter` | `catmull-rom` | `nearest`, `box`, `triangle`, `catmull-rom`, `lanczos` |
 | `-allow-upscale` | `false` | permit making an image larger |
 | `-format` | `keep` | `keep`, `png` or `jpeg` |
+| `-overwrite` | `false` | replace an existing destination |
 
 ---
 
@@ -378,6 +402,8 @@ img-diff -out diff.png before.png after.png # plus a difference map
 img-diff -crop 4500,1300,500,250 a.png b.png # only that region
 img-diff -min-psnr 35 ./src ./converted     # directories; exit 1 on a failure
 ```
+
+Difference maps are atomic and require `-overwrite` when the destination exists.
 
 `-crop "x,y,w,h x,y,w,h"` measures several rectangles in one call. `-levels`
 adds per-channel tonal levels before and after conversion.
@@ -485,9 +511,10 @@ with the same resampler as
 the two results equal. On the reference shadow patch, an sRGB arithmetic mean
 was 25/13/5 and the linear-light mean was 32/19/9.
 
-The default composite path is `%TEMP%\pixelita\look.png` or
-`/tmp/pixelita/look.png`. Human output prints the absolute path; JSON repeats it
-in `items[].output`. `-out` selects another path.
+The default composite path is a deterministic `look-*.png` name under
+`%TEMP%\pixelita` or `/tmp/pixelita`. Human output prints the absolute path;
+JSON repeats it in `items[].output`. `-out` selects another path. Reusing an
+existing path requires `-overwrite`.
 
 Output is PNG. The default 1400px long-side limit bounds inspection cost;
 `-max 0` preserves native dimensions.

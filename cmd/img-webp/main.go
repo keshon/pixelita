@@ -4,8 +4,8 @@
 // smaller, is not worth doing. Every candidate is encoded, measured against the
 // original and only written when it actually pays off.
 //
-// The work itself lives in internal/ops, which is also what the web interface
-// calls. This file is the flag parser and the table.
+// The work itself lives in internal/ops. This file is the flag parser and the
+// table.
 package main
 
 import (
@@ -20,6 +20,7 @@ import (
 )
 
 func main() {
+	cli.ConfigureDefaultFlags()
 	opt := ops.DefaultWebP()
 	var verbose, asJSON bool
 	var showVersion bool
@@ -38,7 +39,10 @@ func main() {
 		"refuse lossy below this SSIM, 0 disables the check")
 	flag.BoolVar(&opt.DryRun, "dry-run", false, "measure and report, write nothing")
 	flag.BoolVar(&opt.KeepOriginal, "keep-original", opt.KeepOriginal,
-		"keep the source file next to the .webp")
+		"deprecated: false is rejected; use -delete-source")
+	flag.BoolVar(&opt.DeleteSource, "delete-source", false,
+		"delete the source only after a verified destination write")
+	flag.BoolVar(&opt.Overwrite, "overwrite", false, "replace an existing destination")
 	flag.BoolVar(&verbose, "v", false, "list skipped files too")
 	flag.StringVar(&opt.OutDir, "out-dir", "",
 		"write results here instead of next to the source")
@@ -57,34 +61,42 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  img-webp -quality 90 ./public/img/site/download\n")
 		fmt.Fprintf(os.Stderr, "  img-webp -mode near-lossless -skip-palette=false ./ui-shots\n")
 	}
-	flag.Parse()
+	cli.ParseDefaultFlags("img-webp")
 
 	if showVersion {
 		cli.Version(os.Stdout, "img-webp")
 		return
 	}
 	if opt.Quality < 1 || opt.Quality > 100 {
-		fmt.Fprintln(os.Stderr, "error: -quality must be between 1 and 100")
-		os.Exit(2)
+		cli.ExitArgument("img-webp", "invalid_option", fmt.Errorf("-quality must be between 1 and 100"), nil)
 	}
 	if opt.MinGain < 0 || opt.MinPSNR < 0 || opt.MinSSIM < 0 || opt.MinSSIM > 1 {
-		fmt.Fprintln(os.Stderr, "error: thresholds must be non-negative and -min-ssim cannot exceed 1")
-		os.Exit(2)
+		cli.ExitArgument("img-webp", "invalid_threshold", fmt.Errorf("thresholds must be non-negative and -min-ssim cannot exceed 1"), nil)
 	}
 
 	if _, err := opt.EncoderOptions(); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(2)
+		cli.ExitArgument("img-webp", "invalid_option", err, nil)
+	}
+	if !opt.KeepOriginal {
+		next := &report.NextAction{Command: "img-webp", Args: append([]string{"-delete-source"}, flag.Args()...)}
+		cli.ExitArgument("img-webp", "negative_retention_rejected", fmt.Errorf("-keep-original=false is unsafe; use explicit -delete-source"), next)
 	}
 
 	files, err := cli.Roots(flag.Args(), listFile, ".png", ".jpg", ".jpeg")
 	if err != nil {
-		if errors.Is(err, cli.ErrNoInput) {
-			flag.Usage()
-		} else {
-			fmt.Fprintln(os.Stderr, "error:", err)
+		cli.ExitInputArgument("img-webp", err)
+	}
+	planned := make([]ops.Destination, 0, len(files))
+	for _, path := range files {
+		planned = append(planned, ops.Destination{Source: path, Output: opt.OutputPath(path)})
+	}
+	if err := ops.PreflightDestinations(planned, opt.Overwrite, false); err != nil {
+		var pe *ops.PlanError
+		code := "invalid_destination"
+		if errors.As(err, &pe) {
+			code = pe.Code
 		}
-		os.Exit(2)
+		cli.ExitArgument("img-webp", code, err, nil)
 	}
 
 	rep := report.New("img-webp", "converted", opt.DryRun)

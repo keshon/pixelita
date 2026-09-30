@@ -6,6 +6,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -20,6 +21,7 @@ import (
 )
 
 func main() {
+	cli.ConfigureDefaultFlags()
 	opt := ops.DefaultDiff()
 	var out, cropSpec string
 	var worst, tile int
@@ -31,6 +33,7 @@ func main() {
 
 	flag.StringVar(&out, "out", "",
 		"write difference maps here: a file for one pair, a directory for many")
+	flag.BoolVar(&opt.Overwrite, "overwrite", false, "replace an existing difference map")
 	flag.StringVar(&cropSpec, "crop", "",
 		"measure only these regions, as x,y,w,h; several may be given, separated by spaces")
 	flag.IntVar(&worst, "worst", 0,
@@ -64,7 +67,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  img-diff -out diff.png before.png after.png\n")
 		fmt.Fprintf(os.Stderr, "  img-diff -min-psnr 35 ./src ./converted\n")
 	}
-	flag.Parse()
+	cli.ParseDefaultFlags("img-diff")
 
 	if showVersion {
 		cli.Version(os.Stdout, "img-diff")
@@ -73,8 +76,7 @@ func main() {
 
 	rects, err := ops.ParseRects(cropSpec)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(2)
+		cli.ExitArgument("img-diff", "invalid_region", err, nil)
 	}
 	if len(rects) == 1 {
 		opt.Crop = rects[0]
@@ -86,8 +88,7 @@ func main() {
 	// per place, with every number that belongs on that row.
 	if worst > 0 || len(rects) > 1 {
 		if flag.NArg() != 2 {
-			flag.Usage()
-			os.Exit(2)
+			cli.ExitArgument("img-diff", "expected_two_inputs", fmt.Errorf("expected two image paths"), nil)
 		}
 		var items []report.Item
 		var note string
@@ -96,8 +97,7 @@ func main() {
 			switch ranking {
 			case ops.RankSSIM, ops.RankPSNR, ops.RankLevels:
 			default:
-				fmt.Fprintf(os.Stderr, "error: -by must be ssim, psnr or levels, not %q\n", by)
-				os.Exit(2)
+				cli.ExitArgument("img-diff", "invalid_option", fmt.Errorf("-by must be ssim, psnr or levels, not %q", by), nil)
 			}
 			items, err = ops.WorstRegions(flag.Arg(0), flag.Arg(1), worst, tile, ranking,
 				levels || ranking == ops.RankLevels)
@@ -121,14 +121,30 @@ func main() {
 	}
 
 	if flag.NArg() != 2 {
-		flag.Usage()
-		os.Exit(2)
+		cli.ExitArgument("img-diff", "expected_two_inputs", fmt.Errorf("expected two image paths"), nil)
 	}
 
 	pairs, err := pairUp(flag.Arg(0), flag.Arg(1))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(2)
+		cli.ExitArgument("img-diff", "invalid_input", err, nil)
+	}
+	if out != "" {
+		planned := make([]ops.Destination, 0, len(pairs))
+		for _, pair := range pairs {
+			dest := out
+			if len(pairs) > 1 {
+				dest = filepath.Join(out, stem(pair.a)+".png")
+			}
+			planned = append(planned, ops.Destination{Output: dest})
+		}
+		if err := ops.PreflightDestinations(planned, opt.Overwrite, false); err != nil {
+			code := "invalid_destination"
+			var pe *ops.PlanError
+			if errors.As(err, &pe) {
+				code = pe.Code
+			}
+			cli.ExitArgument("img-diff", code, err, nil)
+		}
 	}
 
 	rep := report.New("img-diff", "compared", false)

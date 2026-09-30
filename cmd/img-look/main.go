@@ -9,6 +9,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"image"
@@ -20,9 +21,11 @@ import (
 )
 
 func main() {
+	cli.ConfigureDefaultFlags()
 	opt := ops.DefaultLook()
 	var cropSpec, atSpec string
 	var asJSON, dryRun bool
+	var overwrite bool
 	var showVersion bool
 
 	flag.IntVar(&opt.Max, "max", opt.Max, "longest side of each panel in pixels, 0 keeps the original")
@@ -45,6 +48,7 @@ func main() {
 		"print the pixels at these points instead of writing an image, as x,y x,y")
 	flag.BoolVar(&dryRun, "dry-run", false,
 		"measure and report, write no image — for when only -stats is wanted")
+	flag.BoolVar(&overwrite, "overwrite", false, "replace an existing preview")
 	flag.BoolVar(&showVersion, "version", false, "print which build this is and exit")
 	flag.BoolVar(&asJSON, "json", false, "emit the report as JSON")
 
@@ -63,7 +67,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "                                                 # and what those pixels average to\n")
 		fmt.Fprintf(os.Stderr, "  img-look -at '10,20 300,15' shot.png           # the numbers, not the picture\n")
 	}
-	flag.Parse()
+	cli.ParseDefaultFlags("img-look")
 
 	if showVersion {
 		cli.Version(os.Stdout, "img-look")
@@ -88,8 +92,7 @@ func main() {
 	}
 
 	if flag.NArg() == 0 {
-		flag.Usage()
-		os.Exit(2)
+		cli.ExitInputArgument("img-look", cli.ErrNoInput)
 	}
 
 	// The probe is a different question and gives a different answer: values.
@@ -98,8 +101,7 @@ func main() {
 	if atSpec != "" {
 		points, err := ops.ParsePoints(atSpec)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "error:", err)
-			os.Exit(2)
+			cli.ExitArgument("img-look", "invalid_points", err, nil)
 		}
 		if asJSON {
 			rep := report.New("img-look", "shown", true)
@@ -130,8 +132,7 @@ func main() {
 
 	rects, err := ops.ParseRects(cropSpec)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(2)
+		cli.ExitArgument("img-look", "invalid_region", err, nil)
 	}
 	// One spelling everywhere: -crop reads "x,y,w,h x,y,w,h" here just as it
 	// does in img-diff, so a -worst table pastes directly. Several rectangles
@@ -140,6 +141,23 @@ func main() {
 		rects = []image.Rectangle{{}}
 	}
 	explicitOut := opt.Out != ""
+	var planned []ops.Destination
+	for _, r := range rects {
+		o := opt
+		o.Crop = r
+		if o.Out == "" || len(rects) > 1 {
+			o.Out = ops.LookPath(flag.Args(), o)
+		}
+		planned = append(planned, ops.Destination{Output: o.Out})
+	}
+	if err := ops.PreflightDestinations(planned, overwrite, false); err != nil {
+		code := "invalid_destination"
+		var pe *ops.PlanError
+		if errors.As(err, &pe) {
+			code = pe.Code
+		}
+		cli.ExitArgument("img-look", code, err, nil)
+	}
 	rep := report.New("img-look", "shown", dryRun)
 	failed := false
 	for ri, r := range rects {
@@ -165,7 +183,7 @@ func main() {
 		if dryRun {
 			continue
 		}
-		out, size, err := ops.WriteLook(img, o.Out)
+		out, size, err := ops.WriteLook(img, o.Out, overwrite)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			failed = true

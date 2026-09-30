@@ -5,28 +5,26 @@ description: Use Pixelita to inspect, view, resize, optimize, convert, and compa
 
 # pixelita
 
-Seven tools. Six share one rule: **a conversion that does not pay off is not
-performed.** Every candidate is encoded, measured against the original, and
-written only when the gain clears a floor and fidelity does not fall below one.
-That is why you can point them at a directory without asking first — they cannot
-make it heavier. Destructive modes need explicit approval: `-replace`
-overwrites sources, and `img-webp -keep-original=false` deletes them after a
-successful conversion.
+Use `pixelita inspect`, `optimize`, `compare`, `view`, and `capabilities` for
+task-oriented work. `optimize` plans and measures by default without writing;
+add `--apply` to execute. Same-format JPEG optimization and PNG palette
+quantization are automatic. WebP conversion (`--format webp`) and resize
+variants (`--widths`) are explicit.
 
-The current `pixelita` command only dispatches to the seven specialist tools.
-It does not yet accept a goal, create a plan, select a capability, explain the
-route, execute, and verify through one task model. Do not describe that target
-interface as implemented.
+The seven `img-*` binaries remain specialist tools. Every conversion candidate
+must clear its gain and fidelity floors. Replacement, overwrite, and deletion
+need positive permission: `-replace`, `-overwrite`, and `-delete-source`.
+`img-webp -keep-original=false` is rejected.
 
 ## Before anything else
 
 ```bash
-pixelita scan -version
+pixelita -version
 ```
 
-`pixelita scan …` forwards to `img-scan`, `pixelita diff …` forwards to
-`img-diff`, and the other subcommands follow the same rule. `bin/img-*` work
-directly.
+Use `pixelita capabilities --json` for machine-readable routing facts. Legacy
+`pixelita scan …` and the other seven specialist aliases still forward to the
+matching `img-*` binary; `bin/img-*` also work directly.
 
 Use `-version`, not `-h`, to verify the build. It prints the source commit and
 adds `+uncommitted changes` for a dirty build.
@@ -179,8 +177,8 @@ arguments were wrong.
 Guards, to loosen deliberately rather than by habit: `-min-gain` (10, or 1 for
 jpeg), `-min-psnr` (30 for `img-quant` and lossy `img-webp`), `-min-ssim`,
 `-dry-run`, `-replace`, `-out-dir`, `-jobs`.
-Ask before `-replace` or `img-webp -keep-original=false`; everything else is
-safe unattended.
+Ask before `-replace`, `-overwrite`, or `-delete-source`. Previewing canonical
+optimization without `--apply` is read-only.
 `-colours` aliases `-colors`; `-quality` aliases `-webp-quality` on scan.
 
 ## Traps
@@ -203,8 +201,8 @@ safe unattended.
   `-strict-size` restores the failure.
 - **Output naming**: `-min` suffix by default, `-320w` for `img-resize -widths`;
   `-out-dir` on every writing tool (`quant`, `jpeg`, `webp`, `resize`) writes
-  elsewhere; `-replace` overwrites; `img-webp -keep-original=false` deletes the
-  source after success. Write conversions **outside** the source tree: a rescan
+  elsewhere; `-replace` overwrites sources; `-delete-source` deletes only after
+  a verified WebP write. Write conversions **outside** the source tree: a rescan
   counts its own products, and the numbers stop meaning anything.
 - **AVIF and JPEG XL are unsupported:** no production-quality pure-Go encoder
   is available, and cgo would break the single-command build.

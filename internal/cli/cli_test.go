@@ -1,11 +1,30 @@
 package cli
 
 import (
+	"flag"
+	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestParseFlagsAfterPositionals(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	quick := fs.Bool("quick", false, "")
+	quality := fs.Int("quality", 90, "")
+	if err := ParseFlags(fs, []string{"a.png", "-quick", "b.png", "-quality", "75"}); err != nil {
+		t.Fatal(err)
+	}
+	if !*quick || *quality != 75 {
+		t.Fatalf("flags not parsed: quick=%v quality=%d", *quick, *quality)
+	}
+	if got := fs.Args(); !reflect.DeepEqual(got, []string{"a.png", "b.png"}) {
+		t.Fatalf("paths = %v", got)
+	}
+}
 
 func TestCollectRejectsExplicitUnsupportedFile(t *testing.T) {
 	dir := t.TempDir()

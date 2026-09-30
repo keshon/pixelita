@@ -18,6 +18,7 @@ import (
 )
 
 func main() {
+	cli.ConfigureDefaultFlags()
 	opt := ops.DefaultResize()
 	var filterName, widths, listFile string
 	var verbose, asJSON bool
@@ -39,6 +40,7 @@ func main() {
 	flag.StringVar(&opt.OutDir, "out-dir", "", "write results here instead of next to the source")
 	flag.StringVar(&opt.Suffix, "suffix", "", "suffix for the output name, default is the size")
 	flag.BoolVar(&opt.Replace, "replace", false, "overwrite the source file")
+	flag.BoolVar(&opt.Overwrite, "overwrite", false, "replace an existing destination")
 	flag.BoolVar(&opt.DryRun, "dry-run", false, "report what would happen, write nothing")
 	flag.BoolVar(&verbose, "v", false, "list skipped files too")
 	flag.BoolVar(&showVersion, "version", false, "print which build this is and exit")
@@ -55,7 +57,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  img-resize -widths 320,640,1280 -out-dir ./dist hero.png\n")
 		fmt.Fprintf(os.Stderr, "  img-resize -width 400 -height 400 -fit cover avatar.jpg\n")
 	}
-	flag.Parse()
+	cli.ParseDefaultFlags("img-resize")
 
 	if showVersion {
 		cli.Version(os.Stdout, "img-resize")
@@ -64,31 +66,25 @@ func main() {
 
 	var ok bool
 	if opt.Filter, ok = resize.FilterByName(filterName); !ok {
-		fmt.Fprintf(os.Stderr, "error: unknown filter %q, expected one of %s\n",
-			filterName, strings.Join(resize.FilterNames(), ", "))
-		os.Exit(2)
+		cli.ExitArgument("img-resize", "invalid_option", fmt.Errorf("unknown filter %q, expected one of %s",
+			filterName, strings.Join(resize.FilterNames(), ", ")), nil)
 	}
 
 	var err error
 	if opt.Widths, err = parseWidths(widths); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(2)
+		cli.ExitArgument("img-resize", "invalid_option", err, nil)
 	}
 	if opt.Width < 0 || opt.Height < 0 || opt.MaxWidth < 0 || opt.MaxHeight < 0 || opt.Scale < 0 {
-		fmt.Fprintln(os.Stderr, "error: sizes and scale cannot be negative")
-		os.Exit(2)
+		cli.ExitArgument("img-resize", "invalid_option", fmt.Errorf("sizes and scale cannot be negative"), nil)
 	}
 	if opt.JPEGQuality < 1 || opt.JPEGQuality > 100 {
-		fmt.Fprintln(os.Stderr, "error: -jpeg-quality must be between 1 and 100")
-		os.Exit(2)
+		cli.ExitArgument("img-resize", "invalid_option", fmt.Errorf("-jpeg-quality must be between 1 and 100"), nil)
 	}
 	if opt.Fit != "inside" && opt.Fit != "outside" && opt.Fit != "cover" && opt.Fit != "exact" {
-		fmt.Fprintln(os.Stderr, "error: -fit must be inside, outside, cover or exact")
-		os.Exit(2)
+		cli.ExitArgument("img-resize", "invalid_option", fmt.Errorf("-fit must be inside, outside, cover or exact"), nil)
 	}
 	if opt.Format != "keep" && opt.Format != "png" && opt.Format != "jpeg" {
-		fmt.Fprintln(os.Stderr, "error: -format must be keep, png or jpeg")
-		os.Exit(2)
+		cli.ExitArgument("img-resize", "invalid_option", fmt.Errorf("-format must be keep, png or jpeg"), nil)
 	}
 	selectors := 0
 	for _, selected := range []bool{
@@ -102,22 +98,31 @@ func main() {
 		}
 	}
 	if selectors == 0 {
-		fmt.Fprintln(os.Stderr, "error: ask for one size using -width/-height, -max-width/-max-height, -scale or -widths")
-		os.Exit(2)
+		cli.ExitArgument("img-resize", "missing_size", fmt.Errorf("ask for one size using -width/-height, -max-width/-max-height, -scale or -widths"), nil)
 	}
 	if selectors > 1 {
-		fmt.Fprintln(os.Stderr, "error: choose only one sizing mode: box, maximum bounds, scale or widths")
-		os.Exit(2)
+		cli.ExitArgument("img-resize", "conflicting_options", fmt.Errorf("choose only one sizing mode: box, maximum bounds, scale or widths"), nil)
 	}
 
 	files, err := cli.Roots(flag.Args(), listFile, imgio.Extensions...)
 	if err != nil {
-		if errors.Is(err, cli.ErrNoInput) {
-			flag.Usage()
-		} else {
-			fmt.Fprintln(os.Stderr, "error:", err)
+		cli.ExitInputArgument("img-resize", err)
+	}
+	var planned []ops.Destination
+	for _, path := range files {
+		dests, err := ops.PlanResizeDestinations(path, opt)
+		if err != nil {
+			cli.ExitArgument("img-resize", "invalid_destination", err, nil)
 		}
-		os.Exit(2)
+		planned = append(planned, dests...)
+	}
+	if err := ops.PreflightDestinations(planned, opt.Overwrite, opt.Replace); err != nil {
+		var pe *ops.PlanError
+		code := "invalid_destination"
+		if errors.As(err, &pe) {
+			code = pe.Code
+		}
+		cli.ExitArgument("img-resize", code, err, nil)
 	}
 
 	rep := report.New("img-resize", "resized", opt.DryRun)

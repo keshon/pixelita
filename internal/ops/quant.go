@@ -3,7 +3,6 @@ package ops
 import (
 	"fmt"
 	"math"
-	"os"
 	"path/filepath"
 
 	"github.com/keshon/pixelita/internal/imgio"
@@ -12,19 +11,32 @@ import (
 )
 
 type QuantOptions struct {
-	Colors  int
-	Dither  float64
-	Effort  int
-	MinGain float64
-	MinPSNR float64
-	DryRun  bool
-	Replace bool
-	Suffix  string
-	OutDir  string
+	Colors    int
+	Dither    float64
+	Effort    int
+	MinGain   float64
+	MinPSNR   float64
+	DryRun    bool
+	Replace   bool
+	Suffix    string
+	OutDir    string
+	Output    string
+	Overwrite bool
 }
 
 func DefaultQuant() QuantOptions {
 	return QuantOptions{Colors: 256, Dither: 1, Effort: 6, MinGain: 10, MinPSNR: 30, Suffix: "-min"}
+}
+
+func (o QuantOptions) OutputPath(path string) string {
+	out := path
+	if !o.Replace {
+		out = sibling(path, o.Suffix, ".png")
+	}
+	if o.OutDir != "" {
+		out = filepath.Join(o.OutDir, filepath.Base(out))
+	}
+	return out
 }
 
 // QuantResult is what quantising produced, before anything has been decided
@@ -37,8 +49,7 @@ type QuantResult struct {
 	PSNR        float64 // +Inf when nothing was lost
 }
 
-// QuantBytes quantises a PNG and hands back the result without writing it. The
-// web interface uses this to show a candidate before committing to it.
+// QuantBytes quantises a PNG and returns the candidate without writing it.
 func QuantBytes(path string, o QuantOptions) (QuantResult, string, error) {
 	img, _, raw, err := imgio.Load(path)
 	if err != nil {
@@ -80,33 +91,28 @@ func Quant(path string, o QuantOptions) report.Item {
 		item.Metrics["psnr"] = res.PSNR
 	}
 
-	if o.MinPSNR > 0 && res.PSNR < o.MinPSNR {
-		item.Status = report.StatusSkipped
-		item.Reason = fmt.Sprintf("%.0f dB", res.PSNR)
-		return item
+	verdict := EvaluateCandidate(Candidate{BytesBefore: item.BytesBefore, BytesAfter: item.BytesAfter,
+		PSNR: res.PSNR, HasPSNR: true}, CandidatePolicy{MinGain: o.MinGain, MinPSNR: o.MinPSNR})
+	if verdict.Code == "fidelity_below_minimum" {
+		return skip(item, "fidelity_below_minimum", fmt.Sprintf("%.0f dB", res.PSNR))
 	}
-	if item.GainPercent < o.MinGain {
-		item.Status = report.StatusSkipped
-		item.Reason = "gain " + percent(item.GainPercent)
-		return item
+	if verdict.Code == "gain_below_minimum" {
+		return skip(item, "gain_below_minimum", "gain "+percent(item.GainPercent))
 	}
 
-	item.Output = path
-	if !o.Replace {
-		item.Output = sibling(path, o.Suffix, ".png")
-	}
-	if o.OutDir != "" {
-		if err := os.MkdirAll(o.OutDir, 0o755); err != nil {
-			return fail(item, err, "output directory")
-		}
-		item.Output = filepath.Join(o.OutDir, filepath.Base(item.Output))
+	item.Output = o.OutputPath(path)
+	if o.Output != "" {
+		item.Output = o.Output
 	}
 	if o.DryRun {
 		item.Status = report.StatusWould
 		return item
 	}
-	if err := os.WriteFile(item.Output, res.Encoded, 0o644); err != nil {
-		return fail(item, err, "write error")
+	if err := AtomicWrite(item.Output, res.Encoded, o.Overwrite || o.Replace, func(data []byte) error {
+		_, _, err := imgio.Decode(data)
+		return err
+	}); err != nil {
+		return failCode(item, err, "write_failed", "write error")
 	}
 	item.Status = report.StatusDone
 	return item
