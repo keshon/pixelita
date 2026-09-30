@@ -1,116 +1,114 @@
 # pixelita
 
-Seven command-line tools for images, in pure Go with no cgo. Build them with
-`go build -o bin/ ./cmd/...` — that is the only build step, and keeping it that
-way is a constraint rather than a convenience.
+Pixelita is a pure-Go image toolkit. Build every command with:
 
-## The rule everything answers to
+```bash
+go build -o bin/ ./cmd/...
+```
 
-**A conversion that does not pay off is not performed.** Every candidate is
-encoded, measured against the original, and written only when the gain clears
-`-min-gain` and the fidelity does not fall below `-min-psnr`/`-min-ssim`. Lossy
-`img-webp` enforces the floor the same way `img-quant` does, and `img-scan`
-recommends only what the converter would actually write. This is why the
-tools are safe to point at a directory, and it is the property to protect when
-changing anything.
+The single build command and no-cgo constraint are product requirements.
 
-`-crop` means the same rectangle in `img-look` and `img-diff` on purpose: the
-unit of this work is a region, not a file, and looking at one and measuring it
-should not require restating it. Both take sets (`x,y,w,h x,y,w,h`) — diff
-measures each, look renders one composite per region — and anything that
-*reports* a region prints it in that spelling too — `img-diff -worst` exists so
-coordinates are pasted rather than transcribed, and a test pins `Rect` and
-`ParseRect` to each other so the two can never drift apart.
+## Product architecture
 
-The tools are used by models as much as by people, and where that changes a
-decision it is written down beside the code. Blind tests are how that gets
-found: give an agent a real task with no hint about tooling and watch what it
-does. Three have paid for themselves — a skill that never reached the model, a
-list of seven frictions, and then the finding that matters most.
+Pixelita has three clients: terminal users, agents, and a future GUI. They must
+share typed operations, safety policy, schemas, routing, and verification.
 
-**Count the calls, not the flags.** Across three runs of the same audit the tool
-count grew and the call count went 26, 24, 31. Every fix had been real and none
-had shortened the path, because each added a way to ask one more question while
-the job was asking many. The cause was single: a region at a time. Measuring five
-places meant five invocations, and the tonal figures lived in a different binary
-from the fidelity figures, so the same rectangle was visited twice. A set of
-regions is the unit now, and that audit is two commands. When a change adds a
-flag, ask what it removes.
+The target workflow is:
 
-A wrong number a tool invites is the tool's defect, not the reader's: `colours`
-sitting beside `coloursExact: false` was quoted to five digits, so the field is
-called `coloursAtLeast` when it is one. The same goes for a byte count that
-poses a question it cannot answer — `metadataBytes` sent a reader outside the
-toolkit to find out what had changed, so the chunks are named.
+1. inspect inputs;
+2. plan for an explicit goal;
+3. execute with safety checks;
+4. verify the result.
 
-**A flag that does not survive measurement does not ship.** `-flattest` was
-written, measured against a real photograph, found to point at the wrong half of
-the frame, and deleted in favour of `-by levels`. The reasoning is kept in
-`internal/ops/worst.go` so it is not attempted again. `img-scan -widths` went the
-same way in miniature: it began as one threshold, measured 17 KB on the folder
-that had motivated it, and became a curve — a threshold is a guess about someone
-else's layout, and a small guess reads as "not worth it".
+Formats and codecs are capabilities within that workflow. New formats extend a
+capability registry instead of creating a new product model.
 
-**Ask what question the tool is answering, not whether it answers it well.**
-`img-scan` reported correctly that WebP would save 83% on a folder and said
-nothing about every file being twice as wide as anything would display it, which
-was worth 95%. `metadataBytes` weighed the metadata and would not name it, so a
-reader went outside the toolkit to find out what had changed. Both were accurate
-and both answered something narrower than what was asked. That failure does not
-show up as a wrong number, which is why it survives review; it shows up as a
-person doing by hand the part the tool left out.
+This target is not implemented yet. The current `pixelita` binary dispatches to
+seven specialist `img-*` binaries. It does not accept a goal, build a plan,
+select capabilities, explain routing, execute the plan, and verify the result
+through one task model. Implementing that canonical interface is the main
+remaining product milestone. See [`docs/architecture.md`](docs/architecture.md).
 
-The two tools that answer questions rather than change files — `img-diff` and
-`img-look` — are what makes that rule checkable. When a change to an encoder
-needs verifying, measure with the first and look with the second; do not assert
-that output is correct without having done one of the two.
+Keep the existing `img-*` commands as thin Unix-style wrappers and compatibility
+aliases. They may adapt presentation, but must not own policy or behavior that
+differs from the typed engine. The GUI must call the engine or a stable API; it
+must not parse human CLI output.
 
-`img-diff` resamples a resized pair (b to a, linear light, marked `resampled`)
-rather than failing — resize-then-check is the normal flow, `-strict-size`
-restores the failure. Directory pairs skip self-matches and see through the
-tools' own `-min` / `-320w` / `-800x600` suffixes, so an output directory
-pairs with its sources; when a source and an earlier product both claim one
-output, the same-format claimant wins. Writing outputs inside the scanned
-tree still pollutes rescans (scan counts its own products), so conversions go
-to a directory outside the sources.
+Safety and recovery rules belong in executable help, schemas, and errors. The
+Pixelita skill may summarize them, but must not be the only source.
 
-## Where code goes
+## Conversion policy
 
-All the work lives in `internal/ops`. A command under `cmd/` is a flag parser
-and a table of columns around one function there, and so is the web interface on
-the `web-ui` branch. That is deliberate: if the interface and the command line
-share an implementation, they cannot drift, and "the UI does what the CLI does"
-stops being a promise anyone has to keep by hand.
+A conversion is written only when it clears `-min-gain` and its enabled
+`-min-psnr` or `-min-ssim` thresholds. `img-scan` must recommend only candidates
+that the corresponding converter would write.
 
-To add a tool: write the operation in `internal/ops`, then `cmd/img-<name>` as
-a thin caller, with `-json` and `-dry-run` from the first commit. Every writing
-tool takes `-out-dir`. `pixelita` in `cmd/pixelita` forwards subcommands to the
-`img-*` binaries and holds no implementation. The JSON schema is `2`; per-width
-rollups live in `totals` as well as in the human notes.
+Source overwrite and deletion require explicit user approval. `-replace`
+overwrites a source. `img-webp -keep-original=false` deletes a source after a
+successful conversion and is also destructive.
 
-| Package | What it holds |
+Plan all output paths before parallel writes. Duplicate destinations are
+errors. Failed writes must not remove sources or leave partial outputs.
+
+## Regions and verification
+
+Regions use `x,y,w,h` everywhere. Commands that accept multiple regions use a
+space-separated list. Commands that report regions emit the same spelling so
+their output can be passed directly to `-crop`.
+
+`img-diff` measures fidelity. `img-look` produces viewable images and pixel
+data. Verify encoder changes with at least one of them.
+
+`img-diff -worst` ranks damaged tiles by `ssim`, `psnr`, or `levels`.
+`-by levels` replaced the rejected `-flattest` design: smoothness did not locate
+the regions with the greatest loss of tonal levels.
+
+Dimension-mismatched pairs are resampled from b to a in linear light and marked
+`resampled`. `-strict-size` makes a mismatch fail. Directory comparisons ignore
+extensions and recognize the tools' `-min`, `-320w`, and `-800x600` suffixes.
+
+## Agent-facing contracts
+
+Optimize for task completion and recovery, not flag count. Three runs of the
+same audit used 26, 24, and 31 tool calls despite adding useful flags. The
+multi-region `-crop`, `-worst`, and `-levels` interfaces reduced that workflow
+to two calls.
+
+Names must carry their caveats. An inexact colour count is `coloursAtLeast`,
+not `colours` plus a separate boolean. Metadata reports name relevant chunks;
+a byte count alone does not identify a colour-profile or orientation change.
+
+JSON schema 2 uses one report envelope. Machine-readable rollups belong in
+`totals`; `notes` are for human explanation. Paths use forward slashes.
+
+Explicit unsupported files and invalid or conflicting options are argument
+errors. Directories may contain unrelated files and may produce an empty result.
+
+## Code layout
+
+| Package | Responsibility |
 |---|---|
-| `internal/ops` | What each tool does to a file, and what it decides |
-| `internal/report` | The one output shape: table for a person, JSON for everything else |
-| `internal/quant` | The palette quantiser: histogram, median cut, k-means, dithered remap |
-| `internal/jpegopt` | JPEG rewritten at the coefficient level, pixels untouched |
-| `internal/resize` | Resampling in linear light with premultiplied alpha |
+| `internal/ops` | Image operations and current per-file decisions |
+| `internal/report` | Table and JSON report envelope |
+| `internal/quant` | Histogram, median cut, k-means, and dithered remap |
+| `internal/jpegopt` | Lossless JPEG coefficient-stream optimization |
+| `internal/resize` | Linear-light resampling with premultiplied alpha |
 | `internal/metric` | PSNR and SSIM |
-| `internal/imgio` | Decoding, encoding, and reading headers without decoding |
-| `internal/imgio/exif.go` | The one EXIF tag applied at decode: orientation |
-| `internal/cli` | Walking paths, spreading work across cores |
+| `internal/imgio` | Decode, encode, and header inspection |
+| `internal/imgio/exif.go` | EXIF orientation applied during decode |
+| `internal/cli` | Path collection and worker scheduling |
 
-## Claims are measurements
+New operations start in the typed engine. Add `cmd/img-<name>` only when a
+specialist wrapper improves the human workflow. Thin writing commands support
+`-json`, `-dry-run`, and `-out-dir`.
 
-Every number in the README came from running the tool against a reference and
-writing down what happened — pngquant for the quantiser, libpng for the PNG
-writer, the decoder itself for losslessness. If you change something that moves
-one of those numbers, re-measure and update it. An estimate dressed as a
-measurement is worse than no number.
+## Measurements and tests
 
-The corpus lives outside the repo. `internal/quant/bench_test.go` and the
-`TestCorpus` in `internal/jpegopt` both take a directory through an environment
-variable, so a benchmark run needs real images pointed at rather than committed.
+README performance and quality numbers must come from reproducible measurements.
+Rerun affected measurements when an encoder change can move them. Do not publish
+estimates as benchmark results.
+
+The external corpus is selected through environment variables:
 
 ```bash
 go test ./...
@@ -118,32 +116,21 @@ JPEGOPT_CORPUS=/path/to/jpegs go test ./internal/jpegopt -run TestCorpus -v
 QUANT_BENCH_IMAGE=/path/to/photo.png go test ./internal/quant -bench Phases
 ```
 
-`img-diff` is how a change to an encoder gets checked: run the tool over a
-corpus, then compare the results against the sources. For `img-jpeg` the bar is
-absolute — `img-diff -min-psnr 200` must report zero failures, because identical
-is the whole claim.
+`img-jpeg` is pixel-identical. Verify it with
+`img-diff -min-psnr 200`; any failure rejects the change.
 
-## Things settled, worth not relitigating
+## Fixed constraints
 
-- **AVIF and JPEG XL are out of scope.** No usable pure-Go encoder exists, and
-  cgo would break the single-command build. The predecessor project used cgo for
-  exactly this and it is the pain being escaped.
-- **Metadata is never stripped** by an operation that promises not to change the
-  picture. Dropping EXIF turns a photograph on its side; dropping an ICC profile
-  changes the colours a browser paints.
-- **EXIF orientation is applied at decode**, not carried downstream. The tag
-  does not survive re-encoding and half the formats written here cannot hold it
-  at all, so the only honest place to honour it is the moment the pixels are
-  read. `ReadHeader` reports the turned size to match. `img-jpeg` is exempt
-  because it never decodes: the original tag is still in the file it writes.
-- **Binaries keep the `img-` prefix** whatever the repository is called. It
-  groups them in PATH and it is what gets typed.
-- **The web interface is parked** on the `web-ui` branch until the CSS kit it is
-  built on settles. Do not resume it without being asked.
+- AVIF and JPEG XL remain out of scope while no production-quality pure-Go
+  encoder is available. Adding cgo is not acceptable.
+- Pixel-preserving operations retain metadata. Removing EXIF can rotate an
+  image; removing an ICC profile can change rendered colour.
+- Decode-time EXIF orientation is canonical for decoded operations.
+  `img-jpeg` retains the original orientation tag because it does not decode.
+- Specialist binaries retain the `img-` prefix.
+- The `web-ui` branch remains parked until explicitly resumed.
 
 ## Style
 
-Comments explain *why*, not *what* — the code already says what. Where a
-decision looks arbitrary, the comment is the place the measurement that drove it
-gets written down. Several of the subtler bugs in this repo were found because a
-comment claimed something the code did not do.
+Comments explain constraints, measurements, and non-obvious decisions. They do
+not narrate code that is already clear.

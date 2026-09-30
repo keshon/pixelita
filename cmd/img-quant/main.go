@@ -58,6 +58,22 @@ func main() {
 		cli.Version(os.Stdout, "img-quant")
 		return
 	}
+	if opt.Colors < 2 || opt.Colors > 256 {
+		fmt.Fprintln(os.Stderr, "error: -colors must be between 2 and 256")
+		os.Exit(2)
+	}
+	if opt.Dither < 0 || opt.Dither > 1 {
+		fmt.Fprintln(os.Stderr, "error: -dither must be between 0 and 1")
+		os.Exit(2)
+	}
+	if opt.Effort < 1 || opt.Effort > 10 {
+		fmt.Fprintln(os.Stderr, "error: -effort must be between 1 and 10")
+		os.Exit(2)
+	}
+	if opt.MinGain < 0 || opt.MinPSNR < 0 {
+		fmt.Fprintln(os.Stderr, "error: -min-gain and -min-psnr cannot be negative")
+		os.Exit(2)
+	}
 
 	files, err := cli.Roots(flag.Args(), listFile, ".png")
 	if err != nil {

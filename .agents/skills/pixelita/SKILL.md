@@ -1,6 +1,6 @@
 ---
 name: pixelita
-description: Use the pixelita command-line tools (img-scan, img-quant, img-webp, img-jpeg, img-resize, img-diff, img-look) to make images on disk smaller without making them worse, to actually see an image rather than guess at it, and to judge a file someone else produced. Reach for this skill whenever a task involves image files — shrinking a site's assets, converting PNG or JPEG to WebP, quantising a PNG to a palette, generating responsive sizes, auditing what a folder of images costs, or checking whether a conversion damaged quality. Use it too when someone disputes an image: a client saying a file was ruined by compression, a question of whether a complaint is justified, or any request to compare two versions of the same picture and say what changed and by how much. Also reach for it whenever you need to look at an image yourself — to compare a before with an after, to inspect one region, to see what a transparent image really contains, or to read exact pixel values. Use it even when the user names no tool and simply says "these images are too heavy", "can we optimise the assets", "make a 2x and 1x of this", or "did that conversion hurt the quality". Prefer these tools over ImageMagick, pngquant, cwebp or writing a one-off script.
+description: Use Pixelita to inspect, view, resize, optimize, convert, and compare image files. Applies to asset audits, PNG quantization, WebP conversion, lossless JPEG optimization, responsive variants, visual inspection, regional fidelity analysis, and exact pixel probes. Prefer Pixelita over one-off scripts or unrelated image utilities for these operations.
 ---
 
 # pixelita
@@ -9,7 +9,14 @@ Seven tools. Six share one rule: **a conversion that does not pay off is not
 performed.** Every candidate is encoded, measured against the original, and
 written only when the gain clears a floor and fidelity does not fall below one.
 That is why you can point them at a directory without asking first — they cannot
-make it heavier. What does need asking is `-replace`, which overwrites sources.
+make it heavier. Destructive modes need explicit approval: `-replace`
+overwrites sources, and `img-webp -keep-original=false` deletes them after a
+successful conversion.
+
+The current `pixelita` command only dispatches to the seven specialist tools.
+It does not yet accept a goal, create a plan, select a capability, explain the
+route, execute, and verify through one task model. Do not describe that target
+interface as implemented.
 
 ## Before anything else
 
@@ -17,18 +24,15 @@ make it heavier. What does need asking is `-replace`, which overwrites sources.
 pixelita scan -version
 ```
 
-One name finds all seven tools: `pixelita scan …` forwards to `img-scan`,
-`pixelita diff …` to `img-diff`, and so on. `bin/img-*` work directly too.
+`pixelita scan …` forwards to `img-scan`, `pixelita diff …` forwards to
+`img-diff`, and the other subcommands follow the same rule. `bin/img-*` work
+directly.
 
-Not `-h`. A help screen proves a binary exists, not that it is the one you think:
-a stale copy earlier in PATH answered `-h` perfectly and turned out to be missing
-half the flags, which cost a full round trip to discover. `-version` prints the
-commit it was built from, and says `+uncommitted changes` when the working tree
-had them.
+Use `-version`, not `-h`, to verify the build. It prints the source commit and
+adds `+uncommitted changes` for a dirty build.
 
-If nothing is found, the binaries live in the pixelita repository under `bin/`;
-build with `go build -o bin/ ./cmd/...` and call them by full path. Say the tools
-are missing rather than quietly substituting something else.
+If the command is missing, build with `go build -o bin/ ./cmd/...` and call the
+binaries from `bin/`. Do not substitute another image tool silently.
 
 ## The unit of this work is a region, not a file
 
@@ -40,7 +44,7 @@ Every rectangle is spelled `x,y,w,h`, the same in every tool, and anything that
 reports a region prints it in the spelling `-crop` reads — so the next command is
 a paste, never a transcription.
 
-**Start here when the question is "where".**
+Use `-worst` to locate damaged regions:
 
 ```bash
 img-diff -worst 5 -levels original.png compressed.png
@@ -63,9 +67,8 @@ img-diff -crop "1150,1560,220,90 1280,2816,256,256" -levels a.png b.png
 img-look -crop "1150,1560,220,90 1280,2816,256,256" a.png b.png
 ```
 
-Do not find regions by eye off a difference map and scale the coordinates back up
-by hand. That is arithmetic done by squinting, it has produced mislabelled
-regions, and `-worst` exists because it was being done at all.
+Do not scale coordinates manually from a resized difference map. `-worst`
+reports source coordinates directly.
 
 ## Reading the numbers
 
@@ -80,7 +83,7 @@ client can say so. The level count needs no curve.
 `worst`: `worst 92, p95/p99 18/25` is one stray pixel, while `worst 35, p95/p99
 16/19` is damage spread across the region. A maximum alone cannot tell you which.
 
-**Calibration**, so a number becomes a sentence:
+Reference ranges for photographs:
 
 | | PSNR | SSIM |
 |---|---|---|
@@ -94,10 +97,9 @@ These are for photographs. Flat graphics tolerate far less: a UI screenshot at
 
 ## Seeing it yourself
 
-You cannot see a picture by reading bytes, and base64 on stdout is text, not
-pixels. Looking is two steps: `img-look` writes a PNG and prints an absolute
-path, then you read that path with your file-reading tool. It works for any
-format pixelita reads, so it is also how you view a WebP at all.
+`img-look` writes a PNG and prints its absolute path. Open that path with the
+available image viewer. It supports every format Pixelita decodes, including
+WebP.
 
 ```bash
 img-look hero.webp                            # any format, one PNG to open
@@ -105,8 +107,8 @@ img-look before.png after.png                 # stacked, labelled, a red rule be
 img-look -crop 1280,2816,256,256 -zoom 3 a.png b.png
 ```
 
-Reach for it before claiming anything visual. "The conversion looks fine" is not
-a statement you can make from a byte count.
+Inspect the output before making a visual claim. Byte counts do not establish
+visual quality.
 
 - **`-zoom N`** magnifies by repeating pixels, never resampling, so what you see
   is what is stored. Damage invisible at life size is obvious at three times it.
@@ -117,7 +119,7 @@ a statement you can make from a byte count.
   **`-dry-run`** gives those numbers without writing an image.
 - **`-stretch`** maps the region's own range to full scale, as auto-levels would,
   bringing out whatever the headroom was hiding. Every panel is mapped by the
-  first panel's range, so the comparison stays honest.
+  first panel's range, so the panels remain comparable.
 - **`-at '450,300 20,40'`** prints exact pixel values instead of a picture —
   cheaper and more precise when the question is "what colour exactly".
   Add `-json` for the shared schema (`metrics.r/g/b/a/hex/x/y`).
@@ -128,19 +130,18 @@ path is repeated in `items[].output` under `-json`.
 
 ## The rest of the set
 
-| The situation | The tool |
+| Task | Tool |
 |---|---|
-| "What is even in here?" | `img-scan` — measures rather than guesses |
+| Inventory and measure candidates | `img-scan` |
 | PNG of flat colour, UI, icons, screenshots | `img-quant` — a palette beats WebP here |
 | Photographs, gradients, anything with alpha | `img-webp` |
 | JPEG that must not change at all | `img-jpeg` — refits Huffman tables, pixels identical |
 | Larger than it needs to be on screen | `img-resize` |
 
-`img-scan` is the front door and usually answers the whole question in one
-command: it runs the encoders and reports what each would actually save, naming
-the winner in `metrics.best`. `-quick` reads headers only and is instant.
+`img-scan` runs candidate encoders and reports measured savings in
+`metrics.best`. `-quick` reads headers without encoding.
 
-**Read the per-width lines before proposing a codec.** The scan also measures
+Read the per-width lines before proposing a codec. The scan also measures
 what the set would cost at 640, 1280 and 1920 pixels (`-widths` changes them,
 `metrics.atWidth` carries them per file):
 
@@ -155,7 +156,7 @@ resize from the **originals** rather than from files you have already converted,
 or the losses compound — and say that the page needs `srcset`, because without
 it the browser takes the largest one and the mobile win never happens.
 
-For judging someone else's file, `img-scan -quick -json` also gives:
+`img-scan -quick -json` also reports:
 
 - `paletteSize` — how many entries a palette PNG really carries. Do not infer it
   from the colour type or bit depth; those give the ceiling, not the answer.
@@ -171,13 +172,15 @@ Every tool takes `-json` and emits one shape: `tool`, `schema` (`2`), `dryRun`,
 `items[]`, `summary`, `notes[]`, `totals` (rollups such as scan per-width bytes;
 `metrics.atWidth` carries them per file). Per item: `path`, `output`, `status` (`done`,
 `would`, `skipped`, `failed`), the byte counts, and `metrics` for anything
-tool-specific. Paths use forward slashes everywhere. Exit codes: `0` fine, `1`
-something failed or a threshold was missed, `2` the arguments were wrong.
+tool-specific. Paths use forward slashes everywhere. Exit codes: `0` completed
+(including a deliberate threshold skip), `1` something failed, `2` the
+arguments were wrong.
 
 Guards, to loosen deliberately rather than by habit: `-min-gain` (10, or 1 for
 jpeg), `-min-psnr` (30 for `img-quant` and lossy `img-webp`), `-min-ssim`,
 `-dry-run`, `-replace`, `-out-dir`, `-jobs`.
-`-replace` is the one to ask about; everything else is safe unattended.
+Ask before `-replace` or `img-webp -keep-original=false`; everything else is
+safe unattended.
 `-colours` aliases `-colors`; `-quality` aliases `-webp-quality` on scan.
 
 ## Traps
@@ -189,7 +192,8 @@ jpeg), `-min-psnr` (30 for `img-quant` and lossy `img-webp`), `-min-ssim`,
   container layout or metadata these tools do not report, go and inspect it, and
   say in your answer that you did.
 - **The tools are format-fussy on purpose.** `img-quant` takes PNG only,
-  `img-jpeg` JPEG only. Filter the list rather than reporting the mismatch.
+  `img-jpeg` JPEG only. An unsupported explicit file is an argument error;
+  directories silently ignore unrelated files.
 - **`img-webp` skips palette PNGs by default** — on already-quantised images WebP
   usually loses. `-skip-palette=false` when a scan says otherwise.
 - **A deep scan is slow** because it encodes everything. Start with `-quick` on a
@@ -199,8 +203,8 @@ jpeg), `-min-psnr` (30 for `img-quant` and lossy `img-webp`), `-min-ssim`,
   `-strict-size` restores the failure.
 - **Output naming**: `-min` suffix by default, `-320w` for `img-resize -widths`;
   `-out-dir` on every writing tool (`quant`, `jpeg`, `webp`, `resize`) writes
-  elsewhere; `-replace` overwrites. Write conversions **outside** the source
-  tree: a rescan counts its own products, and the numbers stop meaning anything.
-- **AVIF and JPEG XL do not exist here** and are not coming: no usable pure-Go
-  encoder, and cgo would break the single-command build. Say so rather than
-  reaching for another tool.
+  elsewhere; `-replace` overwrites; `img-webp -keep-original=false` deletes the
+  source after success. Write conversions **outside** the source tree: a rescan
+  counts its own products, and the numbers stop meaning anything.
+- **AVIF and JPEG XL are unsupported:** no production-quality pure-Go encoder
+  is available, and cgo would break the single-command build.

@@ -81,6 +81,9 @@ func Collect(roots []string, exts ...string) ([]string, error) {
 			return nil, err
 		}
 		if !info.IsDir() {
+			if !wanted(root) {
+				return nil, fmt.Errorf("unsupported input %q: expected %s", root, strings.Join(exts, ", "))
+			}
 			add(root)
 			continue
 		}

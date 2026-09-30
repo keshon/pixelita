@@ -9,3 +9,4 @@
 /.claude/*
 !/.claude/skills/
 /tmp/
+/temp/

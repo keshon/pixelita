@@ -63,6 +63,14 @@ func main() {
 		cli.Version(os.Stdout, "img-webp")
 		return
 	}
+	if opt.Quality < 1 || opt.Quality > 100 {
+		fmt.Fprintln(os.Stderr, "error: -quality must be between 1 and 100")
+		os.Exit(2)
+	}
+	if opt.MinGain < 0 || opt.MinPSNR < 0 || opt.MinSSIM < 0 || opt.MinSSIM > 1 {
+		fmt.Fprintln(os.Stderr, "error: thresholds must be non-negative and -min-ssim cannot exceed 1")
+		os.Exit(2)
+	}
 
 	if _, err := opt.EncoderOptions(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)

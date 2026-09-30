@@ -74,6 +74,41 @@ func main() {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(2)
 	}
+	if opt.Width < 0 || opt.Height < 0 || opt.MaxWidth < 0 || opt.MaxHeight < 0 || opt.Scale < 0 {
+		fmt.Fprintln(os.Stderr, "error: sizes and scale cannot be negative")
+		os.Exit(2)
+	}
+	if opt.JPEGQuality < 1 || opt.JPEGQuality > 100 {
+		fmt.Fprintln(os.Stderr, "error: -jpeg-quality must be between 1 and 100")
+		os.Exit(2)
+	}
+	if opt.Fit != "inside" && opt.Fit != "outside" && opt.Fit != "cover" && opt.Fit != "exact" {
+		fmt.Fprintln(os.Stderr, "error: -fit must be inside, outside, cover or exact")
+		os.Exit(2)
+	}
+	if opt.Format != "keep" && opt.Format != "png" && opt.Format != "jpeg" {
+		fmt.Fprintln(os.Stderr, "error: -format must be keep, png or jpeg")
+		os.Exit(2)
+	}
+	selectors := 0
+	for _, selected := range []bool{
+		len(opt.Widths) > 0,
+		opt.Scale > 0,
+		opt.MaxWidth > 0 || opt.MaxHeight > 0,
+		opt.Width > 0 || opt.Height > 0,
+	} {
+		if selected {
+			selectors++
+		}
+	}
+	if selectors == 0 {
+		fmt.Fprintln(os.Stderr, "error: ask for one size using -width/-height, -max-width/-max-height, -scale or -widths")
+		os.Exit(2)
+	}
+	if selectors > 1 {
+		fmt.Fprintln(os.Stderr, "error: choose only one sizing mode: box, maximum bounds, scale or widths")
+		os.Exit(2)
+	}
 
 	files, err := cli.Roots(flag.Args(), listFile, imgio.Extensions...)
 	if err != nil {
