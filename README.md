@@ -30,6 +30,9 @@ Pixelita follows three rules:
 go build -o bin/ ./cmd/...
 ```
 
+On Windows, `build.cmd` builds the same binaries. Use `build.cmd check` to run
+the tests and vet checks before building.
+
 Image operations live in [`internal/ops`](internal/ops). Each current command
 parses flags, calls an operation, and renders a report.
 
@@ -516,8 +519,9 @@ The default composite path is a deterministic `look-*.png` name under
 JSON repeats it in `items[].output`. `-out` selects another path. Reusing an
 existing path requires `-overwrite`.
 
-Output is PNG. The default 1400px long-side limit bounds inspection cost;
-`-max 0` preserves native dimensions.
+Output is PNG. No size flag is required: omitting `-max` applies the default
+1400px long-side limit to bound inspection cost. Use `-max N` to choose another
+cap and `-max 0` to preserve native dimensions.
 
 Transparency is composited onto a checkerboard. Panels include the file name on
 a dark strip. `-across` uses a horizontal layout, and `-label=false` removes the

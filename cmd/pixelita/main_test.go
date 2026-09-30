@@ -110,3 +110,33 @@ func TestOptimizePreviewIncludesApplyAction(t *testing.T) {
 		t.Fatalf("last next argument = %q", got)
 	}
 }
+
+func TestViewRecoveryKeepsTheViewCommand(t *testing.T) {
+	dir := t.TempDir()
+	input := filepath.Join(dir, "input.png")
+	output := filepath.Join(dir, "preview.png")
+	writeTestPNG(t, input)
+	if err := os.WriteFile(output, []byte("existing"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"view", input, "--out", output, "--json"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit=%d stderr=%s stdout=%s", code, stderr.String(), stdout.String())
+	}
+	var payload struct {
+		Items []struct {
+			NextAction *report.NextAction `json:"nextAction"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Items) != 1 || payload.Items[0].NextAction == nil {
+		t.Fatalf("missing recovery action: %s", stdout.String())
+	}
+	if got := payload.Items[0].NextAction.Args[0]; got != "view" {
+		t.Fatalf("recovery command = %q, want view", got)
+	}
+}

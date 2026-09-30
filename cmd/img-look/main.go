@@ -28,7 +28,7 @@ func main() {
 	var overwrite bool
 	var showVersion bool
 
-	flag.IntVar(&opt.Max, "max", opt.Max, "longest side of each panel in pixels, 0 keeps the original")
+	flag.IntVar(&opt.Max, "max", opt.Max, "longest side of each panel in pixels; omit for 1400, 0 keeps the original")
 	flag.StringVar(&cropSpec, "crop", "", "region to show, as x,y,w,h; applied to every input")
 	flag.StringVar(&opt.Background, "bg", opt.Background,
 		"what transparency is shown against: checker, white, black or none")
@@ -150,13 +150,15 @@ func main() {
 		}
 		planned = append(planned, ops.Destination{Output: o.Out})
 	}
-	if err := ops.PreflightDestinations(planned, overwrite, false); err != nil {
-		code := "invalid_destination"
-		var pe *ops.PlanError
-		if errors.As(err, &pe) {
-			code = pe.Code
+	if !dryRun {
+		if err := ops.PreflightDestinations(planned, overwrite, false); err != nil {
+			code := "invalid_destination"
+			var pe *ops.PlanError
+			if errors.As(err, &pe) {
+				code = pe.Code
+			}
+			cli.ExitArgument("img-look", code, err, nil)
 		}
-		cli.ExitArgument("img-look", code, err, nil)
 	}
 	rep := report.New("img-look", "shown", dryRun)
 	failed := false

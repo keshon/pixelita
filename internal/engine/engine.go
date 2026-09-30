@@ -65,21 +65,28 @@ func Compare(req CompareRequest) *report.Report {
 }
 
 type ViewRequest struct {
-	Paths     []string
-	Out       string
-	Max       int
+	Paths []string
+	Out   string
+	// Max is optional. Nil uses Pixelita's bounded preview default; a pointer
+	// to zero explicitly preserves the source dimensions.
+	Max       *int
 	DryRun    bool
 	Overwrite bool
 }
 
 func View(req ViewRequest) (*report.Report, error) {
 	o := ops.DefaultLook()
-	o.Max, o.Out = req.Max, req.Out
+	if req.Max != nil {
+		o.Max = *req.Max
+	}
+	o.Out = req.Out
 	if o.Out == "" {
 		o.Out = ops.LookPath(req.Paths, o)
 	}
-	if err := ops.PreflightDestinations([]ops.Destination{{Output: o.Out}}, req.Overwrite, false); err != nil {
-		return nil, err
+	if !req.DryRun {
+		if err := ops.PreflightDestinations([]ops.Destination{{Output: o.Out}}, req.Overwrite, false); err != nil {
+			return nil, err
+		}
 	}
 	img, items, err := ops.Look(req.Paths, o)
 	rep := report.New("pixelita view", "shown", req.DryRun)

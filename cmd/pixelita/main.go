@@ -117,7 +117,7 @@ func runOptimize(args []string, stdout, stderr io.Writer) int {
 		if errors.As(err, &pe) {
 			code = pe.Code
 		}
-		return argumentError(stdout, stderr, "pixelita optimize", args, code, err, recoveryFor(code, args))
+		return argumentError(stdout, stderr, "pixelita optimize", args, code, err, recoveryFor("optimize", code, args))
 	}
 	rep := engine.ExecuteOptimize(plan)
 	if !req.Apply {
@@ -154,12 +154,13 @@ func runCompare(args []string, stdout, stderr io.Writer) int {
 
 func runView(args []string, stdout, stderr io.Writer) int {
 	fs := newFlags("view")
-	req := engine.ViewRequest{Max: 1400}
+	req := engine.ViewRequest{}
+	max := ops.DefaultLookMax
 	var asJSON, dryRun bool
 	fs.BoolVar(&asJSON, "json", false, "emit JSON")
 	fs.BoolVar(&dryRun, "dry-run", false, "decode and report without writing")
 	fs.BoolVar(&req.Overwrite, "overwrite", false, "replace an existing preview")
-	fs.IntVar(&req.Max, "max", req.Max, "longest preview side")
+	fs.IntVar(&max, "max", max, "longest preview side in pixels; 0 keeps the original")
 	fs.StringVar(&req.Out, "out", "", "preview PNG path")
 	if done, err := parseTaskFlags(fs, args, stdout, "view [flags] <paths>..."); done {
 		return 0
@@ -169,10 +170,10 @@ func runView(args []string, stdout, stderr io.Writer) int {
 	if fs.NArg() == 0 {
 		return argumentError(stdout, stderr, "pixelita view", args, "no_input", cli.ErrNoInput, nil)
 	}
-	if req.Max < 0 {
+	if max < 0 {
 		return argumentError(stdout, stderr, "pixelita view", args, "invalid_option", fmt.Errorf("max cannot be negative"), nil)
 	}
-	req.Paths, req.DryRun = fs.Args(), dryRun
+	req.Paths, req.Max, req.DryRun = fs.Args(), &max, dryRun
 	rep, err := engine.View(req)
 	if err != nil {
 		code := "decode_failed"
@@ -180,7 +181,7 @@ func runView(args []string, stdout, stderr io.Writer) int {
 		if errors.As(err, &pe) {
 			code = pe.Code
 		}
-		return argumentError(stdout, stderr, "pixelita view", args, code, err, recoveryFor(code, args))
+		return argumentError(stdout, stderr, "pixelita view", args, code, err, recoveryFor("view", code, args))
 	}
 	return rep.Emit(stdout, viewColumns, asJSON, true)
 }
@@ -246,7 +247,7 @@ func argumentCode(err error) string {
 	return "invalid_arguments"
 }
 
-func recoveryFor(code string, args []string) *report.NextAction {
+func recoveryFor(command, code string, args []string) *report.NextAction {
 	var flagName string
 	switch code {
 	case "destination_exists":
@@ -256,7 +257,7 @@ func recoveryFor(code string, args []string) *report.NextAction {
 	default:
 		return nil
 	}
-	nextArgs := append([]string{"optimize"}, args...)
+	nextArgs := append([]string{command}, args...)
 	nextArgs = append(nextArgs, flagName)
 	return &report.NextAction{Command: "pixelita", Args: nextArgs}
 }

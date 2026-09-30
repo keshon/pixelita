@@ -155,3 +155,45 @@ func TestOptimizeClassifiesCorruptInput(t *testing.T) {
 		t.Fatalf("corrupt input = %#v", err)
 	}
 }
+
+func TestViewUsesBoundedDefaultUnlessMaxIsExplicit(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "wide.png")
+	img := image.NewNRGBA(image.Rect(0, 0, 1600, 800))
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := png.Encode(f, img); err != nil {
+		_ = f.Close()
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	bounded, err := View(ViewRequest{Paths: []string{path}, DryRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := bounded.Items[0].Str("to"); got != "1400x700" {
+		t.Fatalf("view without Max produced %s, want the default 1400x700", got)
+	}
+
+	native := 0
+	unbounded, err := View(ViewRequest{Paths: []string{path}, Max: &native, DryRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := unbounded.Items[0].Str("to"); got != "1600x800" {
+		t.Fatalf("view with Max=0 produced %s, want native 1600x800", got)
+	}
+
+	existing := filepath.Join(dir, "already-there.png")
+	if err := os.WriteFile(existing, []byte("leave me alone"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := View(ViewRequest{Paths: []string{path}, Out: existing, DryRun: true}); err != nil {
+		t.Fatalf("dry-run rejected an existing destination it will not write: %v", err)
+	}
+}

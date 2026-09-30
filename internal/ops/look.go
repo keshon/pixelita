@@ -44,8 +44,10 @@ type LookOptions struct {
 	Out        string          // empty means LookPath()
 }
 
+const DefaultLookMax = 1400
+
 func DefaultLook() LookOptions {
-	return LookOptions{Max: 1400, Background: "checker", Label: true}
+	return LookOptions{Max: DefaultLookMax, Background: "checker", Label: true}
 }
 
 // LookDir is where composites go when nobody says otherwise.
