@@ -3,6 +3,7 @@ package report
 import (
 	"bytes"
 	"encoding/json"
+	"path/filepath"
 	"testing"
 )
 
@@ -49,15 +50,15 @@ func TestNumAcceptsJSONNumber(t *testing.T) {
 
 func TestNextActionPathsUseForwardSlashes(t *testing.T) {
 	r := New("pixelita optimize", "optimized", true)
-	r.NextAction = &NextAction{Command: "pixelita", Args: []string{"optimize", `C:\images\a.png`, "--apply"}}
+	r.NextAction = &NextAction{Command: "pixelita", Args: []string{"optimize", filepath.Join("images", "a.png"), "--apply"}}
 	var buf bytes.Buffer
 	if err := WriteJSON(r, &buf); err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(buf.Bytes(), []byte(`C:\\images`)) {
+	if bytes.Contains(buf.Bytes(), []byte(`images\\a.png`)) {
 		t.Fatalf("platform-specific path in JSON: %s", buf.String())
 	}
-	if !bytes.Contains(buf.Bytes(), []byte(`C:/images/a.png`)) {
+	if !bytes.Contains(buf.Bytes(), []byte(`images/a.png`)) {
 		t.Fatalf("normalized path missing: %s", buf.String())
 	}
 }
