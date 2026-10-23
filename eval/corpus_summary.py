@@ -50,6 +50,19 @@ def metadata(path, fmt):
     return result
 
 
+def metadata_match(source, output, fmt, removed):
+    before, after = metadata(source, fmt), metadata(output, fmt)
+    if not removed:
+        return "exact" if before == after else "mismatch"
+    if fmt != "png" or removed != ["iDOT"]:
+        return "mismatch"
+    hints = [chunk for chunk in before if chunk[4:8] == b"iDOT"]
+    retained = [chunk for chunk in before if chunk[4:8] != b"iDOT"]
+    if hints and retained == after and not any(c[4:8] == b"iDOT" for c in after):
+        return "declaredEncodingHintRemoval"
+    return "mismatch"
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("directory", type=Path)
@@ -61,6 +74,7 @@ def main():
         "inputCount": len(manifest["items"]), "completed": 0, "formats": {},
         "allSourcesUnchanged": True, "writtenOutputsVerified": 0,
         "metadataExactMatches": 0, "metadataMismatches": 0, "verificationFailures": 0,
+        "metadataMatchesExceptDeclaredEncodingHints": 0,
         "limitations": [
             "One sequential run per image, including a stratified 24-image smoke sample.",
             "Windows peak working set per child process, not simultaneous batch memory.",
@@ -103,8 +117,11 @@ def main():
                 stats["written"] += 1
                 verified = r.get("verification", {}).get("exit") == 0
                 summary["writtenOutputsVerified" if verified else "verificationFailures"] += 1
-                equal = metadata(original["path"], fmt) == metadata(item["output"], fmt)
-                summary["metadataExactMatches" if equal else "metadataMismatches"] += 1
+                match = metadata_match(original["path"], item["output"], fmt,
+                                       item.get("metrics", {}).get("candidateRemovedChunks", []))
+                field = {"exact": "metadataExactMatches", "mismatch": "metadataMismatches",
+                         "declaredEncodingHintRemoval": "metadataMatchesExceptDeclaredEncodingHints"}[match]
+                summary[field] += 1
             elif status == "skipped":
                 stats["skipCodes"][item.get("code", "unknown")] += 1
             else:

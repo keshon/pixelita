@@ -1,7 +1,12 @@
 package ops
 
 import (
+	"bytes"
+	"encoding/binary"
+	"hash/crc32"
 	"image"
+	"os"
+	"reflect"
 	"testing"
 
 	"github.com/keshon/pixelita/internal/report"
@@ -96,5 +101,50 @@ func TestScanTotalsStructured(t *testing.T) {
 	m, ok := at.(map[string]int64)
 	if !ok || m["640"] == 0 {
 		t.Fatalf("atWidth has no 640 figure: %v", at)
+	}
+}
+
+// Preview and apply must disclose discarded encoding hints, including exact
+// palette conversions where pixel identity does not imply identical chunks.
+func TestQuantReportsRemovedIDOT(t *testing.T) {
+	src := writePNG(t, t.TempDir(), "source.png", 32, 32)
+	uncompressPNG(t, src)
+	raw, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunk := make([]byte, 40)
+	binary.BigEndian.PutUint32(chunk, 28)
+	copy(chunk[4:8], "iDOT")
+	binary.BigEndian.PutUint32(chunk[36:], crc32.ChecksumIEEE(chunk[4:36]))
+	source := append(append(append([]byte{}, raw[:33]...), chunk...), raw[33:]...)
+	if err := os.WriteFile(src, source, 0600); err != nil {
+		t.Fatal(err)
+	}
+	opt := DefaultQuant()
+	opt.OutDir = t.TempDir()
+	opt.MinPSNR = 0
+	opt.MinGain = 0
+	opt.DryRun = true
+	preview := Quant(src, opt)
+	if preview.Status != report.StatusWould {
+		t.Fatalf("%+v", preview)
+	}
+	opt.DryRun = false
+	applied := Quant(src, opt)
+	if applied.Status != report.StatusDone {
+		t.Fatalf("%+v", applied)
+	}
+	for _, item := range []report.Item{preview, applied} {
+		if !reflect.DeepEqual(item.Metrics["candidateRemovedChunks"], []string{"iDOT"}) || item.Reason == "" {
+			t.Fatalf("undisclosed removal: %+v", item)
+		}
+	}
+	after, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(source, after) {
+		t.Fatal("source changed")
 	}
 }

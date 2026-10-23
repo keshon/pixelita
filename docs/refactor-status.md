@@ -77,6 +77,14 @@ Tests compare against the former full-frame implementation across small and
 overlapping window sizes. The allocation benchmark confirms buffer size no longer
 grows with image height. This does not remove the decoded-image memory cost.
 
+The four iDOT failures were subsequently resolved: recompression now omits the
+known stale decoding-offset hint, discloses it in preview/apply and executable
+help, and preserves all other ancillary chunks. All four private files passed
+canonical preview/apply parity, fidelity, metadata, and source-integrity checks.
+Unknown unsafe chunks remain rejected. The saved-candidate policy sweep supports
+an explicit conservative 40 dB / 0.99 command for visually sensitive PNGs;
+defaults and the RGB-plus-alpha policy remain unchanged pending broader trials.
+
 ## Deliberate limitations
 
 - Exact-pixel/metadata-guaranteed automatic optimization currently selects only

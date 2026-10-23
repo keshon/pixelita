@@ -82,6 +82,31 @@ controlled speedup is claimed. Source decoding still scales with image area.
 `go test ./internal/metric -run '^$' -bench BenchmarkSSIMRows -benchmem`
 checks SSIM allocation growth independently of file I/O.
 
+## iDOT compatibility and quality-policy follow-up
+
+`idot-recheck-2026-10-23.json` records rechecking all four previously refused
+private screenshots through canonical preview and apply. All four wrote and
+passed independent PSNR/SSIM verification, with identical preview/apply metrics
+and unchanged sources. Combined size fell from 6,030,258 to 1,445,429 bytes.
+Every ancillary chunk except the explicitly reported iDOT hint matched exactly.
+The corpus metadata verifier permits only this named exception; it still rejects
+undeclared removal, stale retained offsets, or changes to other chunks.
+
+`policy_sweep.py` re-evaluates saved candidates without re-encoding:
+
+```powershell
+python eval/policy_sweep.py "$env:TEMP/pixelita-corpus" --out policy.json
+# --overrides accepts a private directory of newer per-image records.
+```
+
+`quality-policy-sweep-2026-10-23.json` includes the four corrected candidates.
+At 10% gain, the 30 dB / 0.95 floor accepts 90 of 91 PNGs and saves 41,759,037
+bytes. The 35 dB / 0.98 floor accepts 87 and saves 39,100,314 bytes; 40 dB / 0.99
+accepts 78 and saves 32,277,149 bytes. These are explicit evaluation scenarios,
+not CLI defaults. The strictest scenario rejects the three inspected candidates
+that showed dithering at 3x zoom. This supports offering a conservative command,
+not claiming perceptual losslessness or changing the default for every workload.
+
 ## PNG reference comparison
 
 `compare_png.py` accepts PNG paths or directories and compares fixed encoder

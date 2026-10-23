@@ -21,6 +21,10 @@ func PreservePNGMetadata(source, encoded []byte) ([]byte, error) {
 		chunk := source[off : off+n+12]
 		switch name {
 		case "IHDR", "IDAT", "IEND", "PLTE", "tRNS":
+		case "iDOT":
+			// Apple's decoding offsets refer to the original compressed stream.
+			// Copying them after re-encoding would make them invalid.
+			// https://github.com/w3c/png/issues/530
 		case "acTL", "fcTL", "fdAT", "bKGD", "hIST":
 			return nil, fmt.Errorf("cannot preserve %s during palette conversion", name)
 		case "iCCP", "sRGB", "gAMA", "cHRM", "pHYs", "tEXt", "zTXt", "iTXt", "eXIf", "tIME":

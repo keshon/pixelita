@@ -51,6 +51,7 @@ func main() {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "img-quant — quantises PNG to a palette when it pays off\n\n")
 		fmt.Fprintf(os.Stderr, "usage: img-quant [flags] <file-or-directory>...\n\n")
+		fmt.Fprintln(os.Stderr, "PNG re-encoding omits stale iDOT decoding offsets; rendering metadata is retained.")
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nexamples:\n")
 		fmt.Fprintf(os.Stderr, "  img-quant -dry-run ./public/img\n")

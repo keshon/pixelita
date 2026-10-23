@@ -56,6 +56,18 @@ sizes differ and reports it; `--strict-size` rejects mismatches.
 Directory comparison checks every matched derivative, including resize suffixes.
 Ambiguous sources are errors, rather than silently selected matches.
 
+For visually sensitive PNG photographs or mixed photo/UI assets, preview with
+stricter floors before applying:
+
+```sh
+pixelita optimize ./images --min-psnr 40 --min-ssim 0.99 --out-dir ./optimized
+```
+
+This retains originals when palette conversion misses either floor. It is a
+conservative option, not a promise of invisible change: inspect worst regions
+at native size as well as zoomed. PNG defaults remain 30 dB PSNR, 10% gain, and
+no SSIM gate unless requested. RGB error under transparent pixels still counts.
+
 ## Safety and fidelity
 
 - Omitted thresholds use strategy defaults. `--min-psnr 0` and `--min-ssim 0`
@@ -67,6 +79,8 @@ Ambiguous sources are errors, rather than silently selected matches.
   are explicitly skipped in these modes.
 - Quantization measures the decoded encoded PNG, retains compatible ancillary
   chunks, and refuses metadata that cannot survive palette changes.
+  Stale Apple `iDOT` decoding offsets are omitted after re-encoding and named
+  in `metrics.candidateRemovedChunks`; ICC, EXIF, and textual chunks are retained.
 - Current WebP conversion and resize reject ICC-profiled or animated PNG inputs
   that their encoders cannot faithfully carry forward. These are not colour
   management tools. JPEG-to-WebP applies EXIF orientation before encoding.

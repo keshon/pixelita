@@ -104,6 +104,7 @@ func runOptimize(args []string, stdout, stderr io.Writer) int {
 	optionalFloat(fs, &req.MinSSIM, "min-ssim", "minimum SSIM; 0 disables")
 	fs.IntVar(&req.Jobs, "jobs", 0, "parallel workers")
 	if done, err := parseTaskFlags(fs, args, stdout, "optimize [flags] <paths>..."); done {
+		fmt.Fprintln(stdout, "\nPNG re-encoding omits stale iDOT decoding offsets; rendering metadata is retained.")
 		return 0
 	} else if err != nil {
 		return argumentError(stdout, stderr, "pixelita optimize", args, "invalid_arguments", err, nil)

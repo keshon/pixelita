@@ -22,13 +22,17 @@ func TestPNGMetadataSurvivesPaletteEncoding(t *testing.T) {
 		t.Fatal(err)
 	}
 	chunk := metadataChunk("tEXt", []byte("Author\x00Pixelita"))
-	source := append(append(append([]byte{}, raw[:33]...), chunk...), raw[33:]...)
+	idot := metadataChunk("iDOT", make([]byte, 28))
+	source := append(append(append(append([]byte{}, raw[:33]...), chunk...), idot...), raw[33:]...)
 	out, err := PreservePNGMetadata(source, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Contains(out, chunk) {
 		t.Fatal("metadata lost")
+	}
+	if bytes.Contains(out, idot) {
+		t.Fatal("stale iDOT offsets copied into recompressed PNG")
 	}
 	if _, _, err := Decode(out); err != nil {
 		t.Fatal(err)

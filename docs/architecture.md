@@ -43,6 +43,10 @@ Compatible PNG ancillary chunks are retained. Palette-dependent chunks,
 unsupported critical chunks, and animation prevent palette conversion. ICC
 conversion and animated PNG transformation are unsupported for current WebP
 and resize paths. Inspect reports named PNG and JPEG metadata.
+The known `iDOT` decoding-offset hint is omitted after PNG recompression because
+its offsets describe the original compressed stream. This is explicitly reported
+as `candidateRemovedChunks`, including in preview. Unknown unsafe chunks remain
+errors. See the [PNG working group's explanation](https://github.com/w3c/png/issues/530).
 
 Publication uses a same-directory verified temporary. Without overwrite,
 a hard link publishes without replacing a concurrently created destination.

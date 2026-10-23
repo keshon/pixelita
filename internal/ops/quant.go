@@ -3,6 +3,7 @@ package ops
 import (
 	"math"
 	"path/filepath"
+	"slices"
 
 	"github.com/keshon/pixelita/internal/imgio"
 	"github.com/keshon/pixelita/internal/metric"
@@ -43,6 +44,7 @@ func (o QuantOptions) OutputPath(path string) string {
 // QuantResult is what quantising produced, before anything has been decided
 // about whether it is worth keeping.
 type QuantResult struct {
+	RemovedChunks []string
 	Encoded       []byte
 	BytesBefore   int64
 	Colors        int
@@ -80,8 +82,17 @@ func QuantBytes(path string, o QuantOptions) (QuantResult, string, error) {
 	if err != nil {
 		return QuantResult{}, "measurement error", err
 	}
+	var removed []string
+	header, err := imgio.ReadHeader(raw)
+	if err != nil {
+		return QuantResult{}, "header error", err
+	}
+	if slices.Contains(header.Chunks, "iDOT") {
+		removed = []string{"iDOT"}
+	}
 	return QuantResult{
-		SSIM: measured.SSIM, PSNRAlpha: measured.PSNRAlpha, DistinctExact: q.DistinctExact,
+		RemovedChunks: removed,
+		SSIM:          measured.SSIM, PSNRAlpha: measured.PSNRAlpha, DistinctExact: q.DistinctExact,
 		Encoded:     encoded,
 		BytesBefore: int64(len(raw)),
 		Colors:      q.Colors,
@@ -103,6 +114,9 @@ func Quant(path string, o QuantOptions) result.Item {
 	item.BytesAfter = int64(len(res.Encoded))
 	item.GainPercent = gain(item.BytesBefore, item.BytesAfter)
 	item.Metrics["colors"] = res.Colors
+	if len(res.RemovedChunks) > 0 {
+		item.Metrics["candidateRemovedChunks"] = res.RemovedChunks
+	}
 	if res.DistinctExact {
 		item.Metrics["distinct"] = res.Distinct
 	} else {
@@ -128,6 +142,9 @@ func Quant(path string, o QuantOptions) result.Item {
 
 	if !verdict.Accept {
 		return skip(item, verdict.Code, "candidate rejected by policy")
+	}
+	if len(res.RemovedChunks) > 0 {
+		item.Reason = "omits stale iDOT decoding offsets"
 	}
 	item.Output = o.OutputPath(path)
 	if o.Output != "" {

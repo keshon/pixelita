@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "inputs": 91,
+  "inputBytes": 62621206,
+  "measuredCandidates": 91,
+  "scenarios": [
+    {
+      "policy": {
+        "minGain": 10,
+        "minPSNR": 30,
+        "minSSIM": 0.95
+      },
+      "accepted": 90,
+      "effectiveBytes": 20862169,
+      "savedBytes": 41759037
+    },
+    {
+      "policy": {
+        "minGain": 10,
+        "minPSNR": 35,
+        "minSSIM": 0.98
+      },
+      "accepted": 87,
+      "effectiveBytes": 23520892,
+      "savedBytes": 39100314
+    },
+    {
+      "policy": {
+        "minGain": 10,
+        "minPSNR": 40,
+        "minSSIM": 0.99
+      },
+      "accepted": 78,
+      "effectiveBytes": 30344057,
+      "savedBytes": 32277149
+    }
+  ],
+  "notes": [
+    "Re-evaluates saved candidates; does not search different encoder settings.",
+    "Unsupported or unmeasured candidates retain the source.",
+    "Higher thresholds are not a perceptual-losslessness guarantee.",
+    "No default changes are implied by these local corpus measurements."
+  ]
+}
