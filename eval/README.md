@@ -19,6 +19,31 @@ This is deterministic acceptance, not an agent usability trial or a representati
 compression benchmark. Timings include process startup and describe one local
 run. No broad performance claim is made.
 
+## Quantizer profiling
+
+Use the version-pinned dependency fixture without copying it into the repository:
+
+```powershell
+$env:CGO_ENABLED = "0"
+$moduleCache = go env GOMODCACHE
+$env:QUANT_BENCH_IMAGE = "$moduleCache/golang.org/x/image@v0.45.0/testdata/yellow_rose.png"
+go test ./internal/quant -run '^$' -bench 'QuantizeFile|Phases' -benchmem -benchtime=1s -count=3
+```
+
+Individual phases can be selected, for example `-bench 'Phases/remap$'`.
+Phase setup is independent of which other sub-benchmarks execute. Median cut
+receives fresh histogram ordering each iteration; the reset is outside timing.
+QuantizeFile excludes file decoding, PNG encoding, and verification. Allocation
+bytes are cumulative Go allocations per operation, not peak resident memory.
+The NRGBA fixture takes the no-copy path in the conversion phase.
+
+The 2026-10-23 Windows run used Go 1.26.4, CGO disabled, and an i5-9600KF.
+The fixture is 400 by 301 pixels, 125,392 bytes, with SHA-256
+`c0a5788aea933d7bab215074684b899b4a20438205d1231d840e62f6e2aef600`.
+Raw measurements are in `quant-baseline-2026-10-23.txt`. This is a dependency
+fixture baseline, not a representative asset corpus or a codec comparison.
+Timing varied substantially across the three repetitions; no speedup is claimed.
+
 ## Historical milestone-two comparison
 
 The measurements below predate the refactor and its updated fidelity and

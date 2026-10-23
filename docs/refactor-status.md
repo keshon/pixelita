@@ -37,13 +37,20 @@ and tiny-image metrics.
 
 The engineering changes do not complete the product-validation phase of the
 agreed plan. Multiple licensed real-world asset collections, comparison against
-reference tools at matched constraints, memory/throughput profiling, and repeated
-agent trials with and without the skill have not been run. No external service
+reference tools at matched constraints, representative memory/throughput profiling,
+and repeated agent trials with and without the skill have not been run. No external service
 or model runner was configured for those trials. No market or usability advantage
 is claimed from synthetic acceptance results.
 
-Hosted CI has not been dispatched from this local checkout. Local Windows
-execution and Linux cross-compilation do not establish Linux runtime behavior.
+Hosted Windows and Linux tests, vet, builds, capability checks, and artifact
+uploads passed for `f96a66a` in GitHub Actions run `39941396199`. The first run
+exposed a test that hardcoded Windows separators; it now constructs a native path.
+
+Quantizer phase benchmarks now run independently and reset median-cut input
+ordering between iterations. Three repetitions on the version-pinned yellow-rose
+fixture recorded roughly 24.5 MB allocated per full quantization, about 24 MB of
+that in histogram construction. This measures cumulative allocation, not peak
+memory. Reproduction details and raw measurements are in eval/README.md.
 
 ## Deliberate limitations
 
