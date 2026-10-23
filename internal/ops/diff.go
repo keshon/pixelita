@@ -93,6 +93,8 @@ func Diff(a, b string, o DiffOptions) result.Item {
 
 	if !math.IsInf(res.PSNR, 1) {
 		item.Metrics["psnr"] = res.PSNR
+	}
+	if !math.IsInf(res.PSNRAlpha, 1) {
 		item.Metrics["psnrAlpha"] = res.PSNRAlpha
 	}
 	item.Verification = &result.Verification{Status: "measured", Method: "decode+psnr+alpha+ssim"}

@@ -1,0 +1,252 @@
+{
+  "schema": 1,
+  "policy": {
+    "minGain": 10,
+    "minPSNR": 30,
+    "minSSIM": 0.95
+  },
+  "repetitions": 3,
+  "platform": "Windows-11-10.0.26100-SP0",
+  "pixelitaVersion": "img-quant 926c578f6052 +uncommitted changes 2026-10-23T10:48:23Z",
+  "pixelitaBinarySHA256": "709350fa099b17c5df22299cd9829c2fee36f738c7993e9924fa48fb557422ce",
+  "quantBinarySHA256": "68625d2b2337f82bbd3a1a7428621a4d24c2ffd6a8a5c8895f9e8745a17c46fb",
+  "pngquantVersion": "2.17.0 (September 2021)",
+  "settings": {
+    "pixelita": "256 colours, dither 1, effort 6",
+    "pngquant": "256 colours, floyd=1, speed=4; no quality search"
+  },
+  "limitations": [
+    "Fixed settings, common acceptance floors; not equal achieved quality.",
+    "Pixelita preview includes decode/encode/verification; pngquant encode timing does not.",
+    "Missing PSNR means positive infinity only in successfully measured reports.",
+    "No metadata equivalence, peak-memory or perceptual quality claim.",
+    "Rejected candidates count as retained originals in effective byte totals."
+  ],
+  "items": [
+    {
+      "name": "flat-rgba.png",
+      "sha256": "0ea2203b9e329a55d766c03b5a54655a1c8fcaa31acd2b3d7a1262f8b6a984b5",
+      "bytesBefore": 4650,
+      "runs": [
+        {
+          "pixelita": {
+            "bytes": 3736,
+            "metrics": {
+              "colors": 256,
+              "distinct": 311,
+              "psnr": 74.05631915482142,
+              "psnrAlpha": 79.3217663222094,
+              "ssim": 0.9999895595561402
+            },
+            "accepted": true,
+            "effectiveBytes": 3736,
+            "seconds": 0.0993673000484705,
+            "externalVerificationSeconds": null
+          },
+          "pngquant": {
+            "bytes": 3306,
+            "metrics": {
+              "differentPercent": 2.3639322916666665,
+              "maxDelta": 12,
+              "p95": 0,
+              "p99": 1,
+              "pixels": 307200,
+              "psnr": 68.11575005870601,
+              "psnrAlpha": 69.9347236719314,
+              "ssim": 0.9999340407771756
+            },
+            "accepted": true,
+            "effectiveBytes": 3306,
+            "seconds": 0.07043070020154119,
+            "externalVerificationSeconds": 0.05551569955423474
+          }
+        },
+        {
+          "pngquant": {
+            "bytes": 3306,
+            "metrics": {
+              "differentPercent": 2.3639322916666665,
+              "maxDelta": 12,
+              "p95": 0,
+              "p99": 1,
+              "pixels": 307200,
+              "psnr": 68.11575005870601,
+              "psnrAlpha": 69.9347236719314,
+              "ssim": 0.9999340407771756
+            },
+            "accepted": true,
+            "effectiveBytes": 3306,
+            "seconds": 0.07151369983330369,
+            "externalVerificationSeconds": 0.05456139985471964
+          },
+          "pixelita": {
+            "bytes": 3736,
+            "metrics": {
+              "colors": 256,
+              "distinct": 311,
+              "psnr": 74.05631915482142,
+              "psnrAlpha": 79.3217663222094,
+              "ssim": 0.9999895595561402
+            },
+            "accepted": true,
+            "effectiveBytes": 3736,
+            "seconds": 0.11709110019728541,
+            "externalVerificationSeconds": null
+          }
+        },
+        {
+          "pixelita": {
+            "bytes": 3736,
+            "metrics": {
+              "colors": 256,
+              "distinct": 311,
+              "psnr": 74.05631915482142,
+              "psnrAlpha": 79.3217663222094,
+              "ssim": 0.9999895595561402
+            },
+            "accepted": true,
+            "effectiveBytes": 3736,
+            "seconds": 0.10627030022442341,
+            "externalVerificationSeconds": null
+          },
+          "pngquant": {
+            "bytes": 3306,
+            "metrics": {
+              "differentPercent": 2.3639322916666665,
+              "maxDelta": 12,
+              "p95": 0,
+              "p99": 1,
+              "pixels": 307200,
+              "psnr": 68.11575005870601,
+              "psnrAlpha": 69.9347236719314,
+              "ssim": 0.9999340407771756
+            },
+            "accepted": true,
+            "effectiveBytes": 3306,
+            "seconds": 0.07093469984829426,
+            "externalVerificationSeconds": 0.059158300049602985
+          }
+        }
+      ]
+    },
+    {
+      "name": "photo-rgb.png",
+      "sha256": "2ea8025ab569cf0e47d52c9f7f1738f91f158c77a8937898252f8dd33b1e1536",
+      "bytesBefore": 954522,
+      "runs": [
+        {
+          "pixelita": {
+            "bytes": 347007,
+            "metrics": {
+              "colors": 256,
+              "coloursAtLeast": 42659,
+              "psnr": 38.01543851819516,
+              "psnrAlpha": 38.015438518164714,
+              "ssim": 0.9568407389141005
+            },
+            "accepted": true,
+            "effectiveBytes": 347007,
+            "seconds": 0.7449206998571754,
+            "externalVerificationSeconds": null
+          },
+          "pngquant": {
+            "bytes": 328484,
+            "metrics": {
+              "differentPercent": 69.53326494724502,
+              "maxDelta": 71,
+              "p95": 8,
+              "p99": 11,
+              "pixels": 1091840,
+              "psnr": 38.224436324314524,
+              "psnrAlpha": 38.22443632429723,
+              "ssim": 0.9623335856446241
+            },
+            "accepted": true,
+            "effectiveBytes": 328484,
+            "seconds": 0.715741999913007,
+            "externalVerificationSeconds": 0.16169050009921193
+          }
+        },
+        {
+          "pngquant": {
+            "bytes": 328484,
+            "metrics": {
+              "differentPercent": 69.53326494724502,
+              "maxDelta": 71,
+              "p95": 8,
+              "p99": 11,
+              "pixels": 1091840,
+              "psnr": 38.224436324314524,
+              "psnrAlpha": 38.22443632429723,
+              "ssim": 0.9623335856446241
+            },
+            "accepted": true,
+            "effectiveBytes": 328484,
+            "seconds": 0.7162752002477646,
+            "externalVerificationSeconds": 0.1750623001717031
+          },
+          "pixelita": {
+            "bytes": 347007,
+            "metrics": {
+              "colors": 256,
+              "coloursAtLeast": 42659,
+              "psnr": 38.01543851819516,
+              "psnrAlpha": 38.015438518164714,
+              "ssim": 0.9568407389141005
+            },
+            "accepted": true,
+            "effectiveBytes": 347007,
+            "seconds": 1.0455975998193026,
+            "externalVerificationSeconds": null
+          }
+        },
+        {
+          "pixelita": {
+            "bytes": 347007,
+            "metrics": {
+              "colors": 256,
+              "coloursAtLeast": 42659,
+              "psnr": 38.01543851819516,
+              "psnrAlpha": 38.015438518164714,
+              "ssim": 0.9568407389141005
+            },
+            "accepted": true,
+            "effectiveBytes": 347007,
+            "seconds": 0.7658839002251625,
+            "externalVerificationSeconds": null
+          },
+          "pngquant": {
+            "bytes": 328484,
+            "metrics": {
+              "differentPercent": 69.53326494724502,
+              "maxDelta": 71,
+              "p95": 8,
+              "p99": 11,
+              "pixels": 1091840,
+              "psnr": 38.224436324314524,
+              "psnrAlpha": 38.22443632429723,
+              "ssim": 0.9623335856446241
+            },
+            "accepted": true,
+            "effectiveBytes": 328484,
+            "seconds": 0.7104616998694837,
+            "externalVerificationSeconds": 0.15609329985454679
+          }
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "pixelita": {
+      "effectiveBytes": 350743,
+      "acceptedRuns": 6,
+      "runs": 6
+    },
+    "pngquant": {
+      "effectiveBytes": 331790,
+      "acceptedRuns": 6,
+      "runs": 6
+    },
+    "inputBytes": 959172
+  }
+}

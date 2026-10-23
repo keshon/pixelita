@@ -1,0 +1,546 @@
+{
+  "schema": 1,
+  "policy": {
+    "minGain": 10,
+    "minPSNR": 30,
+    "minSSIM": 0.95
+  },
+  "repetitions": 3,
+  "platform": "Windows-11-10.0.26100-SP0",
+  "pixelitaVersion": "img-quant 926c578f6052 +uncommitted changes 2026-10-23T10:48:23Z",
+  "pixelitaBinarySHA256": "709350fa099b17c5df22299cd9829c2fee36f738c7993e9924fa48fb557422ce",
+  "quantBinarySHA256": "68625d2b2337f82bbd3a1a7428621a4d24c2ffd6a8a5c8895f9e8745a17c46fb",
+  "pngquantVersion": "2.17.0 (September 2021)",
+  "settings": {
+    "pixelita": "256 colours, dither 1, effort 6",
+    "pngquant": "256 colours, floyd=1, speed=4; no quality search"
+  },
+  "limitations": [
+    "Fixed settings, common acceptance floors; not equal achieved quality.",
+    "Pixelita preview includes decode/encode/verification; pngquant encode timing does not.",
+    "Missing PSNR means positive infinity only in successfully measured reports.",
+    "No metadata equivalence, peak-memory or perceptual quality claim.",
+    "Rejected candidates count as retained originals in effective byte totals."
+  ],
+  "items": [
+    {
+      "name": "gopher-doc.with-alpha.png",
+      "sha256": "da1e0876c0fe4bd012f5656b6f0da0b16f592c85c407878c9e19d379010eac39",
+      "bytesBefore": 6083,
+      "runs": [
+        {
+          "pixelita": {
+            "bytes": 4607,
+            "metrics": {
+              "colors": 253,
+              "distinct": 253,
+              "ssim": 1
+            },
+            "accepted": true,
+            "effectiveBytes": 4607,
+            "seconds": 0.051795000210404396,
+            "externalVerificationSeconds": null
+          },
+          "pngquant": {
+            "bytes": 4631,
+            "metrics": {
+              "differentPercent": 0,
+              "maxDelta": 0,
+              "p95": 0,
+              "p99": 0,
+              "pixels": 7500,
+              "ssim": 1
+            },
+            "accepted": true,
+            "effectiveBytes": 4631,
+            "seconds": 0.033892199862748384,
+            "externalVerificationSeconds": 0.2824312001466751
+          }
+        },
+        {
+          "pngquant": {
+            "bytes": 4631,
+            "metrics": {
+              "differentPercent": 0,
+              "maxDelta": 0,
+              "p95": 0,
+              "p99": 0,
+              "pixels": 7500,
+              "ssim": 1
+            },
+            "accepted": true,
+            "effectiveBytes": 4631,
+            "seconds": 0.0678493999876082,
+            "externalVerificationSeconds": 0.036768400110304356
+          },
+          "pixelita": {
+            "bytes": 4607,
+            "metrics": {
+              "colors": 253,
+              "distinct": 253,
+              "ssim": 1
+            },
+            "accepted": true,
+            "effectiveBytes": 4607,
+            "seconds": 0.04298429982736707,
+            "externalVerificationSeconds": null
+          }
+        },
+        {
+          "pixelita": {
+            "bytes": 4607,
+            "metrics": {
+              "colors": 253,
+              "distinct": 253,
+              "ssim": 1
+            },
+            "accepted": true,
+            "effectiveBytes": 4607,
+            "seconds": 0.04259780002757907,
+            "externalVerificationSeconds": null
+          },
+          "pngquant": {
+            "bytes": 4631,
+            "metrics": {
+              "differentPercent": 0,
+              "maxDelta": 0,
+              "p95": 0,
+              "p99": 0,
+              "pixels": 7500,
+              "ssim": 1
+            },
+            "accepted": true,
+            "effectiveBytes": 4631,
+            "seconds": 0.04385859984904528,
+            "externalVerificationSeconds": 0.03193789999932051
+          }
+        }
+      ]
+    },
+    {
+      "name": "testpattern.png",
+      "sha256": "46e58b5db02ed596c1f3430ac233ada88c7d78fa0e930b1e914190898e0c90ca",
+      "bytesBefore": 3195,
+      "runs": [
+        {
+          "pixelita": {
+            "bytes": 2324,
+            "metrics": {
+              "colors": 243,
+              "distinct": 243,
+              "ssim": 1
+            },
+            "accepted": true,
+            "effectiveBytes": 2324,
+            "seconds": 0.06990509992465377,
+            "externalVerificationSeconds": null
+          },
+          "pngquant": {
+            "bytes": 2108,
+            "metrics": {
+              "differentPercent": 0,
+              "maxDelta": 0,
+              "p95": 0,
+              "p99": 0,
+              "pixels": 10000,
+              "ssim": 1
+            },
+            "accepted": true,
+            "effectiveBytes": 2108,
+            "seconds": 0.027153899893164635,
+            "externalVerificationSeconds": 0.04462640034034848
+          }
+        },
+        {
+          "pngquant": {
+            "bytes": 2108,
+            "metrics": {
+              "differentPercent": 0,
+              "maxDelta": 0,
+              "p95": 0,
+              "p99": 0,
+              "pixels": 10000,
+              "ssim": 1
+            },
+            "accepted": true,
+            "effectiveBytes": 2108,
+            "seconds": 0.06922960001975298,
+            "externalVerificationSeconds": 0.05277159996330738
+          },
+          "pixelita": {
+            "bytes": 2324,
+            "metrics": {
+              "colors": 243,
+              "distinct": 243,
+              "ssim": 1
+            },
+            "accepted": true,
+            "effectiveBytes": 2324,
+            "seconds": 0.05056950030848384,
+            "externalVerificationSeconds": null
+          }
+        },
+        {
+          "pixelita": {
+            "bytes": 2324,
+            "metrics": {
+              "colors": 243,
+              "distinct": 243,
+              "ssim": 1
+            },
+            "accepted": true,
+            "effectiveBytes": 2324,
+            "seconds": 0.06661019986495376,
+            "externalVerificationSeconds": null
+          },
+          "pngquant": {
+            "bytes": 2108,
+            "metrics": {
+              "differentPercent": 0,
+              "maxDelta": 0,
+              "p95": 0,
+              "p99": 0,
+              "pixels": 10000,
+              "ssim": 1
+            },
+            "accepted": true,
+            "effectiveBytes": 2108,
+            "seconds": 0.04834470013156533,
+            "externalVerificationSeconds": 0.03343580011278391
+          }
+        }
+      ]
+    },
+    {
+      "name": "tux.png",
+      "sha256": "4358b1e6137fd60a49ad90d108b73c0116738552d78cf4fceb56a89f044c342f",
+      "bytesBefore": 41427,
+      "runs": [
+        {
+          "pixelita": {
+            "bytes": 20633,
+            "metrics": {
+              "colors": 256,
+              "distinct": 5001,
+              "psnr": 44.02159625379546,
+              "psnrAlpha": 47.49023163290835,
+              "ssim": 0.9953795291641926
+            },
+            "accepted": true,
+            "effectiveBytes": 20633,
+            "seconds": 0.14126720000058413,
+            "externalVerificationSeconds": null
+          },
+          "pngquant": {
+            "bytes": 22725,
+            "metrics": {
+              "differentPercent": 28.06650488620712,
+              "maxDelta": 206,
+              "p95": 3,
+              "p99": 7,
+              "pixels": 152470,
+              "psnr": 41.60184661725651,
+              "psnrAlpha": 46.39171526328575,
+              "ssim": 0.9950586490862822
+            },
+            "accepted": true,
+            "effectiveBytes": 22725,
+            "seconds": 0.08983640000224113,
+            "externalVerificationSeconds": 0.06337520014494658
+          }
+        },
+        {
+          "pngquant": {
+            "bytes": 22725,
+            "metrics": {
+              "differentPercent": 28.06650488620712,
+              "maxDelta": 206,
+              "p95": 3,
+              "p99": 7,
+              "pixels": 152470,
+              "psnr": 41.60184661725651,
+              "psnrAlpha": 46.39171526328575,
+              "ssim": 0.9950586490862822
+            },
+            "accepted": true,
+            "effectiveBytes": 22725,
+            "seconds": 0.09753739973530173,
+            "externalVerificationSeconds": 0.0512338001281023
+          },
+          "pixelita": {
+            "bytes": 20633,
+            "metrics": {
+              "colors": 256,
+              "distinct": 5001,
+              "psnr": 44.02159625379546,
+              "psnrAlpha": 47.49023163290835,
+              "ssim": 0.9953795291641926
+            },
+            "accepted": true,
+            "effectiveBytes": 20633,
+            "seconds": 0.13689960027113557,
+            "externalVerificationSeconds": null
+          }
+        },
+        {
+          "pixelita": {
+            "bytes": 20633,
+            "metrics": {
+              "colors": 256,
+              "distinct": 5001,
+              "psnr": 44.02159625379546,
+              "psnrAlpha": 47.49023163290835,
+              "ssim": 0.9953795291641926
+            },
+            "accepted": true,
+            "effectiveBytes": 20633,
+            "seconds": 0.1593616004101932,
+            "externalVerificationSeconds": null
+          },
+          "pngquant": {
+            "bytes": 22725,
+            "metrics": {
+              "differentPercent": 28.06650488620712,
+              "maxDelta": 206,
+              "p95": 3,
+              "p99": 7,
+              "pixels": 152470,
+              "psnr": 41.60184661725651,
+              "psnrAlpha": 46.39171526328575,
+              "ssim": 0.9950586490862822
+            },
+            "accepted": true,
+            "effectiveBytes": 22725,
+            "seconds": 0.07235549995675683,
+            "externalVerificationSeconds": 0.043871100060641766
+          }
+        }
+      ]
+    },
+    {
+      "name": "video-001.png",
+      "sha256": "e3ad8f29d2adf538bc077fcdb6528d76c36e70b238ee32b5982273eeb65ddc36",
+      "bytesBefore": 29228,
+      "runs": [
+        {
+          "pixelita": {
+            "bytes": 11595,
+            "metrics": {
+              "colors": 256,
+              "distinct": 8853,
+              "psnr": 37.33561929646639,
+              "psnrAlpha": 37.33561929646595,
+              "ssim": 0.9873038267877803
+            },
+            "accepted": true,
+            "effectiveBytes": 11595,
+            "seconds": 0.10988149978220463,
+            "externalVerificationSeconds": null
+          },
+          "pngquant": {
+            "bytes": 11590,
+            "metrics": {
+              "differentPercent": 95.76699029126213,
+              "maxDelta": 34,
+              "p95": 10,
+              "p99": 15,
+              "pixels": 15450,
+              "psnr": 37.63908353496632,
+              "psnrAlpha": 37.63908353496603,
+              "ssim": 0.9915274919986973
+            },
+            "accepted": true,
+            "effectiveBytes": 11590,
+            "seconds": 0.055847599636763334,
+            "externalVerificationSeconds": 0.032161599956452847
+          }
+        },
+        {
+          "pngquant": {
+            "bytes": 11590,
+            "metrics": {
+              "differentPercent": 95.76699029126213,
+              "maxDelta": 34,
+              "p95": 10,
+              "p99": 15,
+              "pixels": 15450,
+              "psnr": 37.63908353496632,
+              "psnrAlpha": 37.63908353496603,
+              "ssim": 0.9915274919986973
+            },
+            "accepted": true,
+            "effectiveBytes": 11590,
+            "seconds": 0.05098799988627434,
+            "externalVerificationSeconds": 0.05492880009114742
+          },
+          "pixelita": {
+            "bytes": 11595,
+            "metrics": {
+              "colors": 256,
+              "distinct": 8853,
+              "psnr": 37.33561929646639,
+              "psnrAlpha": 37.33561929646595,
+              "ssim": 0.9873038267877803
+            },
+            "accepted": true,
+            "effectiveBytes": 11595,
+            "seconds": 0.07643450004979968,
+            "externalVerificationSeconds": null
+          }
+        },
+        {
+          "pixelita": {
+            "bytes": 11595,
+            "metrics": {
+              "colors": 256,
+              "distinct": 8853,
+              "psnr": 37.33561929646639,
+              "psnrAlpha": 37.33561929646595,
+              "ssim": 0.9873038267877803
+            },
+            "accepted": true,
+            "effectiveBytes": 11595,
+            "seconds": 0.07498060027137399,
+            "externalVerificationSeconds": null
+          },
+          "pngquant": {
+            "bytes": 11590,
+            "metrics": {
+              "differentPercent": 95.76699029126213,
+              "maxDelta": 34,
+              "p95": 10,
+              "p99": 15,
+              "pixels": 15450,
+              "psnr": 37.63908353496632,
+              "psnrAlpha": 37.63908353496603,
+              "ssim": 0.9915274919986973
+            },
+            "accepted": true,
+            "effectiveBytes": 11590,
+            "seconds": 0.05340849980711937,
+            "externalVerificationSeconds": 0.033643600065261126
+          }
+        }
+      ]
+    },
+    {
+      "name": "yellow_rose.png",
+      "sha256": "c0a5788aea933d7bab215074684b899b4a20438205d1231d840e62f6e2aef600",
+      "bytesBefore": 125392,
+      "runs": [
+        {
+          "pixelita": {
+            "bytes": 34851,
+            "metrics": {
+              "colors": 256,
+              "distinct": 45643,
+              "psnr": 10.56546126631938,
+              "psnrAlpha": 37.199282324783056,
+              "ssim": 0.9718868367263692
+            },
+            "accepted": false,
+            "effectiveBytes": 125392,
+            "seconds": 0.22301080031320453,
+            "externalVerificationSeconds": null
+          },
+          "pngquant": {
+            "bytes": 33534,
+            "metrics": {
+              "differentPercent": 99.89950166112956,
+              "maxDelta": 255,
+              "p95": 194,
+              "p99": 231,
+              "pixels": 120400,
+              "psnr": 10.562284066674405,
+              "psnrAlpha": 37.51788419624296,
+              "ssim": 0.9784285659081271
+            },
+            "accepted": false,
+            "effectiveBytes": 125392,
+            "seconds": 0.1619522999972105,
+            "externalVerificationSeconds": 0.04741419991478324
+          }
+        },
+        {
+          "pngquant": {
+            "bytes": 33534,
+            "metrics": {
+              "differentPercent": 99.89950166112956,
+              "maxDelta": 255,
+              "p95": 194,
+              "p99": 231,
+              "pixels": 120400,
+              "psnr": 10.562284066674405,
+              "psnrAlpha": 37.51788419624296,
+              "ssim": 0.9784285659081271
+            },
+            "accepted": false,
+            "effectiveBytes": 125392,
+            "seconds": 0.15498130023479462,
+            "externalVerificationSeconds": 0.04747169977054
+          },
+          "pixelita": {
+            "bytes": 34851,
+            "metrics": {
+              "colors": 256,
+              "distinct": 45643,
+              "psnr": 10.56546126631938,
+              "psnrAlpha": 37.199282324783056,
+              "ssim": 0.9718868367263692
+            },
+            "accepted": false,
+            "effectiveBytes": 125392,
+            "seconds": 0.23771469993516803,
+            "externalVerificationSeconds": null
+          }
+        },
+        {
+          "pixelita": {
+            "bytes": 34851,
+            "metrics": {
+              "colors": 256,
+              "distinct": 45643,
+              "psnr": 10.56546126631938,
+              "psnrAlpha": 37.199282324783056,
+              "ssim": 0.9718868367263692
+            },
+            "accepted": false,
+            "effectiveBytes": 125392,
+            "seconds": 0.21036450006067753,
+            "externalVerificationSeconds": null
+          },
+          "pngquant": {
+            "bytes": 33534,
+            "metrics": {
+              "differentPercent": 99.89950166112956,
+              "maxDelta": 255,
+              "p95": 194,
+              "p99": 231,
+              "pixels": 120400,
+              "psnr": 10.562284066674405,
+              "psnrAlpha": 37.51788419624296,
+              "ssim": 0.9784285659081271
+            },
+            "accepted": false,
+            "effectiveBytes": 125392,
+            "seconds": 0.15495740016922355,
+            "externalVerificationSeconds": 0.05046029994264245
+          }
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "pixelita": {
+      "effectiveBytes": 164551,
+      "acceptedRuns": 12,
+      "runs": 15
+    },
+    "pngquant": {
+      "effectiveBytes": 166446,
+      "acceptedRuns": 12,
+      "runs": 15
+    },
+    "inputBytes": 205325
+  }
+}

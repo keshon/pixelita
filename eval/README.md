@@ -19,6 +19,44 @@ This is deterministic acceptance, not an agent usability trial or a representati
 compression benchmark. Timings include process startup and describe one local
 run. No broad performance claim is made.
 
+## PNG reference comparison
+
+`compare_png.py` accepts PNG paths or directories and compares fixed encoder
+settings using the same Pixelita decoded metrics and acceptance floors. It needs
+pngquant on PATH and the built binaries. Inputs are hashed before and after;
+reference outputs live in a temporary directory.
+
+```powershell
+$moduleCache = go env GOMODCACHE
+$fixtures = "$moduleCache/golang.org/x/image@v0.45.0/testdata"
+python eval/compare_png.py --report results.json --repeat 3 `
+  "$fixtures/gopher-doc.with-alpha.png" "$fixtures/testpattern.png" `
+  "$fixtures/tux.png" "$fixtures/video-001.png" "$fixtures/yellow_rose.png"
+```
+
+Default floors are 10% gain, 30 dB for both RGB and alpha-aware PSNR, and 0.95
+SSIM. Both tools use 256 colours and full dithering; Pixelita effort 6 and
+pngquant speed 4 are fixed settings, not equivalent search budgets. These are
+matched acceptance constraints, not matched achieved quality. Pixelita runs a
+verified preview; pngquant writes a temporary candidate measured by `compare`.
+Reported timings therefore describe different workflows, not codec speed.
+Metadata equivalence and perceptual quality are not assessed.
+
+The checked-in `png-fixtures-2026-10-23.json` records three repetitions on five
+dependency fixtures using pngquant 2.17.0. Both tools accepted four fixtures and
+rejected yellow_rose. Retaining the rejected original, total bytes were 164,551
+for Pixelita and 166,446 for pngquant, from 205,325 input bytes. The rose fixture
+has transparency: its RGB PSNR is about 10.56 dB despite alpha-aware PSNR above
+37 dB. The existing policy deliberately requires both; this is not evidence of
+equally severe visible damage.
+
+`png-synthetic-2026-10-23.json` uses flat-rgba.png and photo-rgb.png from
+generate_corpus.py. Both accepted both files; Pixelita produced 350,743 bytes
+and pngquant 331,790, from 959,172 input bytes. Neither small collection supports
+a general compression advantage. Reports identify binary hashes, tool versions,
+source hashes, every repetition, and the acceptance policy. Missing PSNR fields
+denote infinity only after successful measurement, following schema 2.
+
 ## Quantizer profiling
 
 Use the version-pinned dependency fixture without copying it into the repository:

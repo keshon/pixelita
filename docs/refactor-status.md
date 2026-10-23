@@ -36,8 +36,8 @@ and tiny-image metrics.
 ## Remaining acceptance work
 
 The engineering changes do not complete the product-validation phase of the
-agreed plan. Multiple licensed real-world asset collections, comparison against
-reference tools at matched constraints, representative memory/throughput profiling,
+agreed plan. Multiple licensed real-world asset collections, broader reference
+comparisons, representative memory/throughput profiling,
 and repeated agent trials with and without the skill have not been run. No external service
 or model runner was configured for those trials. No market or usability advantage
 is claimed from synthetic acceptance results.
@@ -51,6 +51,14 @@ ordering between iterations. Three repetitions on the version-pinned yellow-rose
 fixture recorded roughly 24.5 MB allocated per full quantization, about 24 MB of
 that in histogram construction. This measures cumulative allocation, not peak
 memory. Reproduction details and raw measurements are in eval/README.md.
+
+A reference harness now compares PNG candidates against pngquant with shared
+gain, RGB/alpha PSNR, and SSIM floors. Three repetitions on five dependency
+fixtures and two synthetic images gave mixed results, not a general compression
+advantage. Source hashes remained unchanged. Raw reports and reproduction
+commands are in eval/. Preparing this comparison exposed and fixed independent
+RGB/alpha metric serialization: alpha-only damage is now reported even when RGB
+is identical, and invisible RGB changes no longer serialize infinite alpha PSNR.
 
 ## Deliberate limitations
 
