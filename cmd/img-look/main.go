@@ -9,13 +9,12 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
-	"image"
 	"os"
 
 	"github.com/keshon/pixelita/internal/cli"
+	"github.com/keshon/pixelita/internal/engine"
 	"github.com/keshon/pixelita/internal/ops"
 	"github.com/keshon/pixelita/internal/report"
 )
@@ -95,116 +94,24 @@ func main() {
 		cli.ExitInputArgument("img-look", cli.ErrNoInput)
 	}
 
-	// The probe is a different question and gives a different answer: values.
-	// With -json it emits the shared report shape so agents parse one schema;
-	// without it prints text for a person.
-	if atSpec != "" {
-		points, err := ops.ParsePoints(atSpec)
-		if err != nil {
-			cli.ExitArgument("img-look", "invalid_points", err, nil)
-		}
-		if asJSON {
-			rep := report.New("img-look", "shown", true)
-			for _, path := range flag.Args() {
-				for _, l := range ops.ProbeItems(path, points) {
-					rep.Add(l)
-				}
-			}
-			os.Exit(rep.Emit(os.Stdout, probeColumns, true, false))
-		}
-		exit := 0
-		for _, path := range flag.Args() {
-			if flag.NArg() > 1 {
-				fmt.Println(path)
-			}
-			lines, err := ops.Probe(path, points)
-			if err != nil {
-				fmt.Fprintln(os.Stderr, "error:", err)
-				exit = 1
-				continue
-			}
-			for _, l := range lines {
-				fmt.Println(" ", l)
-			}
-		}
-		os.Exit(exit)
-	}
-
 	rects, err := ops.ParseRects(cropSpec)
 	if err != nil {
 		cli.ExitArgument("img-look", "invalid_region", err, nil)
 	}
-	// One spelling everywhere: -crop reads "x,y,w,h x,y,w,h" here just as it
-	// does in img-diff, so a -worst table pastes directly. Several rectangles
-	// mean several views in one invocation, one composite per region.
-	if len(rects) == 0 {
-		rects = []image.Rectangle{{}}
+	points, err := ops.ParsePoints(atSpec)
+	if err != nil {
+		cli.ExitArgument("img-look", "invalid_points", err, nil)
 	}
-	explicitOut := opt.Out != ""
-	var planned []ops.Destination
-	for _, r := range rects {
-		o := opt
-		o.Crop = r
-		if o.Out == "" || len(rects) > 1 {
-			o.Out = ops.LookPath(flag.Args(), o)
-		}
-		planned = append(planned, ops.Destination{Output: o.Out})
+	rep, err := engine.Look(engine.LookRequest{Paths: flag.Args(), Options: opt, Regions: rects, Points: points, DryRun: dryRun, Overwrite: overwrite})
+	if err != nil {
+		cli.ExitArgument("img-look", engine.ErrorCode(err), err, nil)
 	}
-	if !dryRun {
-		if err := ops.PreflightDestinations(planned, overwrite, false); err != nil {
-			code := "invalid_destination"
-			var pe *ops.PlanError
-			if errors.As(err, &pe) {
-				code = pe.Code
-			}
-			cli.ExitArgument("img-look", code, err, nil)
-		}
+	rep.Tool = "img-look"
+	shape := columns
+	if len(points) > 0 {
+		shape = probeColumns
 	}
-	rep := report.New("img-look", "shown", dryRun)
-	failed := false
-	for ri, r := range rects {
-		o := opt
-		o.Crop = r
-		if o.Out == "" || (len(rects) > 1 && explicitOut) {
-			o.Out = ops.LookPath(flag.Args(), o)
-		} else if len(rects) > 1 {
-			// Distinct files per region; LookPath already hashes the crop.
-			o.Out = ops.LookPath(flag.Args(), o)
-		}
-		_ = ri
-		img, items, err := ops.Look(flag.Args(), o)
-		for _, it := range items {
-			rep.Add(it)
-		}
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error:", err)
-			failed = true
-			continue
-		}
-		// Every other tool here reads -dry-run as "report, write nothing".
-		if dryRun {
-			continue
-		}
-		out, size, err := ops.WriteLook(img, o.Out, overwrite)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error:", err)
-			failed = true
-			continue
-		}
-		// Tag just the items from this region with this composite. Items carry
-		// their crop in metrics, so a multi-region run stays attributable.
-		base := len(rep.Items) - len(items)
-		for i := range items {
-			rep.Items[base+i].Output = out
-		}
-		rep.Note("open %s — %dx%d, %s",
-			out, img.Rect.Dx(), img.Rect.Dy(), report.Size(size))
-	}
-	if failed {
-		rep.Emit(os.Stdout, columns, asJSON, false)
-		os.Exit(1)
-	}
-	os.Exit(rep.Emit(os.Stdout, columns, asJSON, false))
+	os.Exit(report.Emit(rep, os.Stdout, shape, asJSON, false))
 }
 
 var columns = []report.Column{

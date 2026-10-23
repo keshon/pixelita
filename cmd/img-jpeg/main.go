@@ -8,17 +8,19 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"os"
 
 	"github.com/keshon/pixelita/internal/cli"
+	"github.com/keshon/pixelita/internal/engine"
 	"github.com/keshon/pixelita/internal/ops"
 	"github.com/keshon/pixelita/internal/report"
 )
 
 func main() {
+	ctx, cancel := cli.WorkContext()
+	defer cancel()
 	cli.ConfigureDefaultFlags()
 	opt := ops.DefaultJPEG()
 	var verbose, asJSON bool
@@ -37,7 +39,7 @@ func main() {
 	flag.BoolVar(&verbose, "v", false, "list skipped files too")
 	flag.BoolVar(&showVersion, "version", false, "print which build this is and exit")
 	flag.BoolVar(&asJSON, "json", false, "emit the report as JSON")
-	flag.IntVar(&jobs, "jobs", 0, "parallel workers, 0 means one per CPU core")
+	flag.IntVar(&jobs, "jobs", 0, "parallel workers, 0 means at most two workers")
 	flag.StringVar(&listFile, "from-file", "", "read paths from a file, one per line")
 
 	flag.Usage = func() {
@@ -49,36 +51,20 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  img-jpeg -replace ./public/img/photos\n")
 	}
 	cli.ParseDefaultFlags("img-jpeg")
+	if err := (ops.CandidatePolicy{MinGain: opt.MinGain}).Validate(); err != nil {
+		cli.ExitArgument("img-jpeg", "invalid_threshold", err, nil)
+	}
 
 	if showVersion {
 		cli.Version(os.Stdout, "img-jpeg")
 		return
 	}
 
-	files, err := cli.Roots(flag.Args(), listFile, ".jpg", ".jpeg")
-	if err != nil {
-		cli.ExitInputArgument("img-jpeg", err)
+	rep, runErr := engine.JPEG(engine.BatchRequest{Context: ctx, Paths: flag.Args(), FromFile: listFile, Jobs: jobs}, opt)
+	if runErr != nil {
+		cli.ExitArgument("img-jpeg", engine.ErrorCode(runErr), runErr, nil)
 	}
-	planned := make([]ops.Destination, 0, len(files))
-	for _, path := range files {
-		planned = append(planned, ops.Destination{Source: path, Output: opt.OutputPath(path)})
-	}
-	if err := ops.PreflightDestinations(planned, opt.Overwrite, opt.Replace); err != nil {
-		var pe *ops.PlanError
-		code := "invalid_destination"
-		if errors.As(err, &pe) {
-			code = pe.Code
-		}
-		cli.ExitArgument("img-jpeg", code, err, nil)
-	}
-
-	rep := report.New("img-jpeg", "written", opt.DryRun)
-	items := make([]report.Item, len(files))
-	cli.Each(len(files), jobs, func(i int) { items[i] = ops.JPEG(files[i], opt) })
-	for _, it := range items {
-		rep.Add(it)
-	}
-	os.Exit(rep.Emit(os.Stdout, columns, asJSON, verbose))
+	os.Exit(report.Emit(rep, os.Stdout, columns, asJSON, verbose))
 }
 
 var columns = []report.Column{

@@ -1,13 +1,13 @@
 package ops
 
 import (
-	"fmt"
 	"math"
 	"path/filepath"
 
 	"github.com/keshon/pixelita/internal/imgio"
+	"github.com/keshon/pixelita/internal/metric"
 	"github.com/keshon/pixelita/internal/quant"
-	"github.com/keshon/pixelita/internal/report"
+	"github.com/keshon/pixelita/internal/result"
 )
 
 type QuantOptions struct {
@@ -16,6 +16,7 @@ type QuantOptions struct {
 	Effort    int
 	MinGain   float64
 	MinPSNR   float64
+	MinSSIM   float64
 	DryRun    bool
 	Replace   bool
 	Suffix    string
@@ -42,11 +43,14 @@ func (o QuantOptions) OutputPath(path string) string {
 // QuantResult is what quantising produced, before anything has been decided
 // about whether it is worth keeping.
 type QuantResult struct {
-	Encoded     []byte
-	BytesBefore int64
-	Colors      int
-	Distinct    int
-	PSNR        float64 // +Inf when nothing was lost
+	Encoded       []byte
+	BytesBefore   int64
+	Colors        int
+	Distinct      int
+	PSNRAlpha     float64
+	PSNR          float64 // +Inf when nothing was lost
+	SSIM          float64
+	DistinctExact bool
 }
 
 // QuantBytes quantises a PNG and returns the candidate without writing it.
@@ -64,19 +68,32 @@ func QuantBytes(path string, o QuantOptions) (QuantResult, string, error) {
 		return QuantResult{}, "encode error", err
 	}
 
+	encoded, err = imgio.PreservePNGMetadata(raw, encoded)
+	if err != nil {
+		return QuantResult{}, "metadata preservation unsupported", err
+	}
+	decoded, _, err := imgio.Decode(encoded)
+	if err != nil {
+		return QuantResult{}, "verification error", err
+	}
+	measured, err := metric.Compare(img, decoded)
+	if err != nil {
+		return QuantResult{}, "measurement error", err
+	}
 	return QuantResult{
+		SSIM: measured.SSIM, PSNRAlpha: measured.PSNRAlpha, DistinctExact: q.DistinctExact,
 		Encoded:     encoded,
 		BytesBefore: int64(len(raw)),
 		Colors:      q.Colors,
 		Distinct:    q.Distinct,
-		PSNR:        q.PSNR,
+		PSNR:        measured.PSNR,
 	}, "", nil
 }
 
 // Quant reduces a PNG to a palette and writes it only when the result is both
 // smaller and still faithful.
-func Quant(path string, o QuantOptions) report.Item {
-	item := report.Item{Path: path, Metrics: map[string]any{}}
+func Quant(path string, o QuantOptions) result.Item {
+	item := result.Item{Path: path, Metrics: map[string]any{}}
 
 	res, reason, err := QuantBytes(path, o)
 	if err != nil {
@@ -86,26 +103,38 @@ func Quant(path string, o QuantOptions) report.Item {
 	item.BytesAfter = int64(len(res.Encoded))
 	item.GainPercent = gain(item.BytesBefore, item.BytesAfter)
 	item.Metrics["colors"] = res.Colors
-	item.Metrics["distinct"] = res.Distinct
+	if res.DistinctExact {
+		item.Metrics["distinct"] = res.Distinct
+	} else {
+		item.Metrics["coloursAtLeast"] = res.Distinct
+	}
+	item.Verification = &result.Verification{Status: "measured", Method: "decode+psnr+alpha+ssim"}
+	item.Metrics["ssim"] = res.SSIM
+	if !math.IsInf(res.PSNRAlpha, 1) {
+		item.Metrics["psnrAlpha"] = res.PSNRAlpha
+	}
 	if !math.IsInf(res.PSNR, 1) {
 		item.Metrics["psnr"] = res.PSNR
 	}
 
 	verdict := EvaluateCandidate(Candidate{BytesBefore: item.BytesBefore, BytesAfter: item.BytesAfter,
-		PSNR: res.PSNR, HasPSNR: true}, CandidatePolicy{MinGain: o.MinGain, MinPSNR: o.MinPSNR})
+		PSNR: res.PSNR, HasPSNR: true, PSNRAlpha: res.PSNRAlpha, HasPSNRAlpha: true, SSIM: res.SSIM, HasSSIM: true}, CandidatePolicy{MinGain: o.MinGain, MinPSNR: o.MinPSNR, MinSSIM: o.MinSSIM})
 	if verdict.Code == "fidelity_below_minimum" {
-		return skip(item, "fidelity_below_minimum", fmt.Sprintf("%.0f dB", res.PSNR))
+		return skip(item, "fidelity_below_minimum", "candidate below requested RGB, alpha-aware PSNR or SSIM")
 	}
 	if verdict.Code == "gain_below_minimum" {
 		return skip(item, "gain_below_minimum", "gain "+percent(item.GainPercent))
 	}
 
+	if !verdict.Accept {
+		return skip(item, verdict.Code, "candidate rejected by policy")
+	}
 	item.Output = o.OutputPath(path)
 	if o.Output != "" {
 		item.Output = o.Output
 	}
 	if o.DryRun {
-		item.Status = report.StatusWould
+		item.Status = result.StatusWould
 		return item
 	}
 	if err := AtomicWrite(item.Output, res.Encoded, o.Overwrite || o.Replace, func(data []byte) error {
@@ -114,6 +143,7 @@ func Quant(path string, o QuantOptions) report.Item {
 	}); err != nil {
 		return failCode(item, err, "write_failed", "write error")
 	}
-	item.Status = report.StatusDone
+	item.Written = true
+	item.Status = result.StatusDone
 	return item
 }

@@ -24,7 +24,23 @@ import (
 var Extensions = []string{".png", ".jpg", ".jpeg", ".gif", ".webp"}
 
 // Decode reads an image from bytes and reports the format it was in.
+// MaxDecodePixels bounds a single decoded frame before allocating its pixels.
+const MaxDecodePixels = 64_000_000
+
 func Decode(raw []byte) (image.Image, string, error) {
+	var cfg image.Config
+	var err error
+	if isWebP(raw) {
+		cfg, err = xwebp.DecodeConfig(bytes.NewReader(raw))
+	} else {
+		cfg, _, err = image.DecodeConfig(bytes.NewReader(raw))
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 || int64(cfg.Width) > MaxDecodePixels/int64(cfg.Height) {
+		return nil, "", fmt.Errorf("image exceeds decode limit of %d pixels", MaxDecodePixels)
+	}
 	if isWebP(raw) {
 		img, err := decodeWebP(raw)
 		return img, "webp", err
@@ -314,6 +330,17 @@ func jpegHeader(raw []byte) (Header, error) {
 			}
 		case marker >= 0xE0 && marker <= 0xEF, marker == 0xFE: // APPn and comments
 			h.Ancillary += int64(size + 2)
+			name := fmt.Sprintf("APP%d", marker-0xe0)
+			if marker == 0xfe {
+				name = "COM"
+			}
+			payload := raw[off+4 : off+2+size]
+			if bytes.HasPrefix(payload, []byte("ICC_PROFILE\x00")) {
+				name = "ICC_PROFILE"
+			} else if bytes.HasPrefix(payload, []byte("Exif\x00\x00")) {
+				name = "EXIF"
+			}
+			h.Chunks = append(h.Chunks, name)
 		}
 		off += 2 + size
 	}

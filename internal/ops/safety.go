@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -75,6 +76,14 @@ func PreflightDestinations(planned []Destination, overwrite, replace bool) error
 		if source, ok := sources[key]; ok {
 			return &PlanError{Code: "output_overlaps_input", Path: d.Output, Source: d.Source, Other: source, Detail: "planned destination is another input"}
 		}
+		if outInfo, err := os.Stat(d.Output); err == nil {
+			for _, source := range sources {
+				sourceInfo, e := os.Stat(source)
+				if e == nil && os.SameFile(outInfo, sourceInfo) {
+					return &PlanError{Code: "output_overlaps_input", Path: d.Output, Source: d.Source, Other: source, Detail: "destination aliases an input"}
+				}
+			}
+		}
 		if _, err := os.Stat(d.Output); err == nil && !overwrite {
 			return &PlanError{Code: "destination_exists", Path: d.Output, Detail: "destination exists; use explicit overwrite permission"}
 		} else if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -90,6 +99,13 @@ func canonicalPath(path string) (string, error) {
 		return "", err
 	}
 	abs = filepath.Clean(abs)
+	// Resolve existing ancestors as output directories may be symlinked while
+	// the destination itself has not been created yet.
+	resolved, err := resolveAncestors(abs)
+	if err != nil {
+		return "", err
+	}
+	abs = resolved
 	if runtime.GOOS == "windows" {
 		abs = strings.ToLower(abs)
 	}
@@ -133,46 +149,46 @@ func AtomicWrite(path string, data []byte, overwrite bool, verify func([]byte) e
 	if err != nil {
 		return err
 	}
+	if !bytes.Equal(written, data) {
+		return fmt.Errorf("written bytes differ from candidate")
+	}
 	if verify != nil {
 		if err := verify(written); err != nil {
 			return fmt.Errorf("verification failed: %w", err)
 		}
 	}
 
-	_, statErr := os.Stat(path)
-	if errors.Is(statErr, os.ErrNotExist) {
-		if err := os.Rename(tmp, path); err != nil {
+	// Link publishes without replacing a destination created after preflight.
+	if !overwrite {
+		if err := os.Link(tmp, path); err != nil {
 			return err
 		}
-		removeTemp = false
 		return nil
 	}
-	if statErr != nil {
-		return statErr
-	}
-	if !overwrite {
-		return fmt.Errorf("destination exists")
-	}
-
-	backupFile, err := os.CreateTemp(dir, "."+filepath.Base(path)+".backup-*")
-	if err != nil {
-		return err
-	}
-	backup := backupFile.Name()
-	if err := backupFile.Close(); err != nil {
-		return err
-	}
-	if err := os.Remove(backup); err != nil {
-		return err
-	}
-	if err := os.Rename(path, backup); err != nil {
-		return err
-	}
+	// Rename replaces in one filesystem operation; never move the original away
+	// first, which leaves a missing destination if the process is interrupted.
 	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Rename(backup, path)
 		return err
 	}
 	removeTemp = false
-	_ = os.Remove(backup)
 	return nil
+}
+
+func resolveAncestors(path string) (string, error) {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err == nil {
+		return resolved, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	parent := filepath.Dir(path)
+	if parent == path {
+		return path, nil
+	}
+	resolved, err = resolveAncestors(parent)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(resolved, filepath.Base(path)), nil
 }

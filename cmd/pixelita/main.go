@@ -61,6 +61,8 @@ func newFlags(name string) *flag.FlagSet {
 }
 
 func runInspect(args []string, stdout, stderr io.Writer) int {
+	ctx, cancel := cli.WorkContext()
+	defer cancel()
 	fs := newFlags("inspect")
 	var asJSON, measure, verbose bool
 	var jobs int
@@ -73,29 +75,33 @@ func runInspect(args []string, stdout, stderr io.Writer) int {
 	} else if err != nil {
 		return argumentError(stdout, stderr, "pixelita inspect", args, "invalid_arguments", err, nil)
 	}
-	rep, err := engine.Inspect(engine.InspectRequest{Paths: fs.Args(), Measure: measure, Jobs: jobs})
+	rep, err := engine.Inspect(engine.InspectRequest{Context: ctx, Paths: fs.Args(), Measure: measure, Jobs: jobs})
 	if err != nil {
 		return argumentError(stdout, stderr, "pixelita inspect", args, argumentCode(err), err, nil)
 	}
-	return rep.Emit(stdout, inspectColumns, asJSON, verbose)
+	return report.Emit(rep, stdout, inspectColumns, asJSON, verbose)
 }
 
 func runOptimize(args []string, stdout, stderr io.Writer) int {
+	ctx, cancel := cli.WorkContext()
+	defer cancel()
 	fs := newFlags("optimize")
-	req := engine.OptimizeRequest{}
+	req := engine.OptimizeRequest{Context: ctx}
 	var asJSON bool
 	var widths string
+	fs.BoolVar(&req.ExactPixels, "exact-pixels", false, "require identical pixels; unsupported strategies are skipped")
+	fs.BoolVar(&req.PreserveMetadata, "preserve-metadata", false, "require metadata preservation; unsupported strategies are skipped")
 	fs.BoolVar(&asJSON, "json", false, "emit JSON")
 	fs.BoolVar(&req.Apply, "apply", false, "write the previewed decisions")
 	fs.BoolVar(&req.Overwrite, "overwrite", false, "allow replacing an existing destination")
 	fs.BoolVar(&req.Replace, "replace", false, "allow replacing each source")
 	fs.BoolVar(&req.DeleteSource, "delete-source", false, "delete a source after a verified WebP write")
 	fs.StringVar(&req.OutDir, "out-dir", "", "write outputs in this directory")
-	fs.StringVar(&req.Format, "format", "keep", "keep or webp; conversion requires webp explicitly")
+	fs.StringVar(&req.Format, "format", "keep", "keep, webp, or auto; auto compares permitted formats")
 	fs.StringVar(&widths, "widths", "", "comma-separated resize variants; dimensions change only when explicit")
-	fs.Float64Var(&req.MinGain, "min-gain", 0, "minimum percentage gain; 0 uses the strategy default")
-	fs.Float64Var(&req.MinPSNR, "min-psnr", 0, "minimum PSNR; 0 uses the strategy default")
-	fs.Float64Var(&req.MinSSIM, "min-ssim", 0, "minimum SSIM; 0 uses the strategy default")
+	optionalFloat(fs, &req.MinGain, "min-gain", "minimum percentage gain; omitted uses strategy default, 0 allows no gain")
+	optionalFloat(fs, &req.MinPSNR, "min-psnr", "minimum PSNR; omitted uses strategy default, 0 disables")
+	optionalFloat(fs, &req.MinSSIM, "min-ssim", "minimum SSIM; 0 disables")
 	fs.IntVar(&req.Jobs, "jobs", 0, "parallel workers")
 	if done, err := parseTaskFlags(fs, args, stdout, "optimize [flags] <paths>..."); done {
 		return 0
@@ -106,9 +112,7 @@ func runOptimize(args []string, stdout, stderr io.Writer) int {
 	if req.Widths, err = parseWidths(widths); err != nil {
 		return argumentError(stdout, stderr, "pixelita optimize", args, "invalid_arguments", err, nil)
 	}
-	if req.MinGain < 0 || req.MinPSNR < 0 || req.MinSSIM < 0 || req.MinSSIM > 1 {
-		return argumentError(stdout, stderr, "pixelita optimize", args, "invalid_threshold", fmt.Errorf("thresholds must be non-negative and min-ssim cannot exceed 1"), nil)
-	}
+
 	req.Paths = fs.Args()
 	plan, err := engine.BuildOptimizePlan(req)
 	if err != nil {
@@ -125,12 +129,21 @@ func runOptimize(args []string, stdout, stderr io.Writer) int {
 		nextArgs = append(nextArgs, "--apply")
 		rep.NextAction = &report.NextAction{Command: "pixelita", Args: nextArgs}
 	}
-	return rep.Emit(stdout, optimizeColumns, asJSON, true)
+	return report.Emit(rep, stdout, optimizeColumns, asJSON, true)
 }
 
 func runCompare(args []string, stdout, stderr io.Writer) int {
 	fs := newFlags("compare")
 	req := engine.CompareRequest{}
+	var crop, by string
+	fs.StringVar(&crop, "crop", "", "regions as x,y,w,h separated by spaces")
+	fs.StringVar(&by, "by", "ssim", "worst-region ranking: ssim, psnr, levels")
+	fs.IntVar(&req.Worst, "worst", 0, "report N worst regions")
+	fs.IntVar(&req.Tile, "tile", 256, "region tile size")
+	fs.BoolVar(&req.Levels, "levels", false, "report tonal levels")
+	fs.StringVar(&req.Out, "out", "", "difference-map destination")
+	fs.BoolVar(&req.Overwrite, "overwrite", false, "replace an existing difference map")
+	fs.IntVar(&req.Jobs, "jobs", 0, "parallel comparisons")
 	var asJSON bool
 	fs.BoolVar(&asJSON, "json", false, "emit JSON")
 	fs.Float64Var(&req.MinPSNR, "min-psnr", 0, "fail below PSNR")
@@ -148,13 +161,29 @@ func runCompare(args []string, stdout, stderr io.Writer) int {
 		return argumentError(stdout, stderr, "pixelita compare", args, "invalid_threshold", fmt.Errorf("thresholds must be non-negative and min-ssim cannot exceed 1"), nil)
 	}
 	req.A, req.B = fs.Arg(0), fs.Arg(1)
-	rep := engine.Compare(req)
-	return rep.Emit(stdout, compareColumns, asJSON, true)
+	var err error
+	req.By = ops.Ranking(by)
+	req.Regions, err = ops.ParseRects(crop)
+	if err != nil {
+		return argumentError(stdout, stderr, "pixelita compare", args, "invalid_region", err, nil)
+	}
+	rep, err := engine.Compare(req)
+	if err != nil {
+		return argumentError(stdout, stderr, "pixelita compare", args, "invalid_arguments", err, nil)
+	}
+	return report.Emit(rep, stdout, compareColumns, asJSON, true)
 }
 
 func runView(args []string, stdout, stderr io.Writer) int {
 	fs := newFlags("view")
 	req := engine.ViewRequest{}
+	var crop, points string
+	fs.StringVar(&crop, "crop", "", "regions as x,y,w,h separated by spaces")
+	fs.StringVar(&points, "at", "", "pixel coordinates as x,y separated by spaces")
+	fs.IntVar(&req.Zoom, "zoom", 0, "repeat pixels by this factor; implies max 0 unless specified")
+	fs.BoolVar(&req.Stats, "stats", false, "report tonal levels and region statistics")
+	fs.BoolVar(&req.Across, "across", false, "arrange panels horizontally")
+	fs.BoolVar(&req.Stretch, "stretch", false, "stretch the first panel range across all panels")
 	max := ops.DefaultLookMax
 	var asJSON, dryRun bool
 	fs.BoolVar(&asJSON, "json", false, "emit JSON")
@@ -173,7 +202,21 @@ func runView(args []string, stdout, stderr io.Writer) int {
 	if max < 0 {
 		return argumentError(stdout, stderr, "pixelita view", args, "invalid_option", fmt.Errorf("max cannot be negative"), nil)
 	}
-	req.Paths, req.Max, req.DryRun = fs.Args(), &max, dryRun
+	req.Paths, req.DryRun = fs.Args(), dryRun
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "max" {
+			req.Max = &max
+		}
+	})
+	var parseErr error
+	req.Regions, parseErr = ops.ParseRects(crop)
+	if parseErr != nil {
+		return argumentError(stdout, stderr, "pixelita view", args, "invalid_region", parseErr, nil)
+	}
+	req.Points, parseErr = ops.ParsePoints(points)
+	if parseErr != nil {
+		return argumentError(stdout, stderr, "pixelita view", args, "invalid_points", parseErr, nil)
+	}
 	rep, err := engine.View(req)
 	if err != nil {
 		code := "decode_failed"
@@ -183,7 +226,21 @@ func runView(args []string, stdout, stderr io.Writer) int {
 		}
 		return argumentError(stdout, stderr, "pixelita view", args, code, err, recoveryFor("view", code, args))
 	}
-	return rep.Emit(stdout, viewColumns, asJSON, true)
+	cols := viewColumns
+	if len(req.Points) > 0 {
+		cols = []report.Column{{Title: "file", Width: 40, Value: func(i report.Item) string { return i.Path }}, {Title: "pixel", Width: 12, Value: func(i report.Item) string {
+			x, _ := i.Num("x")
+			y, _ := i.Num("y")
+			return fmt.Sprintf("%.0f,%.0f", x, y)
+		}}, {Title: "RGBA", Width: 20, Value: func(i report.Item) string {
+			r, _ := i.Num("r")
+			g, _ := i.Num("g")
+			b, _ := i.Num("b")
+			a, _ := i.Num("a")
+			return fmt.Sprintf("%.0f %.0f %.0f %.0f", r, g, b, a)
+		}}}
+	}
+	return report.Emit(rep, stdout, cols, asJSON, true)
 }
 
 func runCapabilities(args []string, stdout, stderr io.Writer) int {
@@ -207,7 +264,7 @@ func runCapabilities(args []string, stdout, stderr io.Writer) int {
 		build := cli.BuildInfo()
 		rep.Build = &build
 		rep.Finish()
-		_ = rep.WriteJSON(stdout)
+		_ = report.WriteJSON(rep, stdout)
 		return 0
 	}
 	for _, c := range caps {
@@ -337,11 +394,16 @@ var optimizeColumns = []report.Column{
 }
 
 var compareColumns = []report.Column{
+	{Title: "region", Width: 22, Value: func(i report.Item) string { return i.Str("crop") }},
+	{Title: "decision", Width: 24, Value: func(i report.Item) string { return report.Action(i, "compared") }},
 	{Title: "a", Width: 38, Value: func(i report.Item) string { return i.Path }},
 	{Title: "b", Width: 38, Value: func(i report.Item) string { return i.Output }},
 	{Title: "psnr", Width: 10, Right: true, Value: func(i report.Item) string {
 		v, ok := i.Num("psnr")
 		if !ok {
+			if i.Status == report.StatusFailed {
+				return "unavailable"
+			}
 			return "identical"
 		}
 		return fmt.Sprintf("%.1f dB", v)
@@ -359,4 +421,14 @@ var viewColumns = []report.Column{
 	{Title: "file", Width: 42, Value: func(i report.Item) string { return i.Path }},
 	{Title: "output", Width: 48, Value: func(i report.Item) string { return i.Output }},
 	{Title: "shown", Width: 14, Value: func(i report.Item) string { return i.Str("to") }},
+}
+
+func optionalFloat(fs *flag.FlagSet, target **float64, name, help string) {
+	fs.Func(name, help, func(s string) error {
+		v, err := strconv.ParseFloat(s, 64)
+		if err == nil {
+			*target = &v
+		}
+		return err
+	})
 }

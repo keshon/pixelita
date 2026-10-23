@@ -1,174 +1,81 @@
-# Pixelita product architecture
+# Pixelita architecture
 
-## Status
+## Current dependency direction
 
-This document separates the current implementation from the target architecture
-and defines compatibility rules for the migration.
+Command adapters parse flags and render results. `internal/engine` owns typed
+requests, batch orchestration, planning, candidate selection, and discovery.
+It calls `internal/ops`, which owns encoding, shared verdicts, verification, and
+safe publication. Codec and metric packages retain their existing boundaries.
 
-The current implementation has a shared operation layer in `internal/ops`, an
-internal typed planner and static capability catalog in `internal/engine`, five
-canonical `pixelita` tasks, seven specialist `img-*` commands, and JSON schema
-2. Specialist validation and presentation remain command-local. A stable public
-Go API and GUI integration remain unimplemented.
+`internal/batch` owns path collection and bounded scheduling independently of
+CLI parsing. `internal/result` owns typed outcomes and accounting;
+`internal/report` renders them as JSON or tables. Neither the engine nor image
+operations import the CLI or rendering packages.
 
-## Product model
+Specialists use engine entry points for quantization, JPEG, WebP, resize, scan,
+comparison, and previews. Parser-specific diagnostics may remain in commands;
+non-CLI callers are also validated by the shared entry points. The API remains
+internal and is not a versioned public contract.
 
-Pixelita is one image system with three clients:
+## Planning and selection
 
-- people using a terminal;
-- agents that require low-ambiguity discovery and structured results;
-- a future GUI.
+`optimize` preserves format/dimensions by default. `format=auto` explicitly allows
+same-format and WebP candidates; actual encoded sizes and fidelity verdicts
+select the winner. Candidate decisions are returned with the selected result.
+There is no plugin registry or general-purpose optimization language.
 
-The target architecture gives all three clients one typed engine for operations,
-policy, capability metadata, routing, and verification. Interfaces may adapt
-presentation without reimplementing decisions.
+Plans hold source hashes, output destinations, strategy identifiers, and the
+request. All outputs are preflighted before parallel work, including outputs
+that could alias another input. Execution checks source hashes. Preview and
+apply are separate measurements; there is no public serialized plan.
 
-The durable workflow is:
+Format conversion and resize can be combined explicitly. Exact-pixel and
+metadata-preservation constraints currently restrict automatic optimization to
+baseline JPEG. Unsupported guarantees are reported as skips, never assumed.
 
-1. **Inspect and understand.** Inventory inputs, read dimensions and metadata,
-   identify constraints, and measure realistic opportunities.
-2. **Choose a goal and plan.** Express an intent such as reduce transfer size,
-   create display variants, preserve pixels exactly, or investigate damage.
-   Evaluate compatible strategies and explain the choice.
-3. **Execute safely.** Encode candidates, enforce gain and fidelity policy,
-   preflight every output, and write only approved results.
-4. **Verify.** Report quantitative fidelity, inspect relevant regions, and
-   make the relationship between source, result, and decision explicit.
+## Safety boundaries
 
-Formats are capabilities inside this workflow. Task intents remain stable when
-PNG, JPEG, WebP, or future formats are added.
+Candidate policy rejects non-finite thresholds and missing requested evidence.
+PNG quantization and WebP measure decoded candidates; PSNR includes an
+alpha-aware gate. JPEG publication checks decoded pixel identity.
 
-## Layers
+Compatible PNG ancillary chunks are retained. Palette-dependent chunks,
+unsupported critical chunks, and animation prevent palette conversion. ICC
+conversion and animated PNG transformation are unsupported for current WebP
+and resize paths. Inspect reports named PNG and JPEG metadata.
 
-### 1. Typed engine
+Publication uses a same-directory verified temporary. Without overwrite,
+a hard link publishes without replacing a concurrently created destination.
+With overwrite, rename replaces the destination directly; the previous file
+is never moved away into a temporary backup first. Unsupported filesystem
+operations fail rather than falling back to destructive copying.
 
-The internal engine owns the optimization request, deterministic plan, routing,
-and capability catalog. Shared operations own candidate encoding, measurement,
-verification, and atomic output. Together they provide:
+This is per-output safety, not a batch transaction or protection against an
+adversarial process changing inputs between checks. Already completed outputs
+remain when later files fail or queued work is cancelled.
 
-- safety policy: gain and fidelity floors, overwrite/delete rules, atomic
-  output, collision detection, metadata promises, and deterministic ordering;
-- one structured result envelope with stable status and error semantics;
-- the compile-time capability catalog and strategy selection;
-- candidate measurement and post-operation verification.
+## Results and compatibility
 
-The plan is deliberately internal and is not a stable serialized contract. A
-future GUI must call the engine or a stable API built over it; it must not parse
-human CLI output.
+Schema 2 retains legacy summary meanings. Additive totals distinguish unique
+inputs, observed inventory bytes, outcomes, predicted outputs, and actual
+writes. A successful comparison is not counted as a file write.
 
-### 2. Canonical task interface
+Verification and candidate decisions are typed fields. Detailed operation
+measurements remain in metrics. Human notes are explanatory. Paths in JSON use
+forward slashes; skipped and failed items have stable codes.
 
-The `pixelita` binary is the primary entry point for agents and general use. It
-supports:
+Directory comparison pairs each derivative, preferring relative-directory
+and same-format matches; ambiguous matches fail. Region comparison applies the
+same fidelity policy and reports dimension resampling.
 
-- inspect inputs and discover capabilities;
-- preview an internally planned optimization without writing;
-- apply the same routes with explicit permission;
-- verify sources against results;
-- present images or regions for visual inspection.
+## Deliberate limits
 
-Routing decisions appear in brief human output and in structured item fields:
+There is no GUI, stable public API, new codec, or speculative encoder rewrite.
+The encoder algorithms remain unchanged. Runtime defaults cap concurrent files
+at two and decoded/generated preview size at 64 million pixels. Optimization
+and specialist writing/scan requests accept cancellation between files;
+interrupting an individual codec mid-operation is not implemented.
 
-- the normalized goal and input facts;
-- the selected strategy and capability identifier;
-- output, measured gain and fidelity;
-- verification method and automatic-selection status;
-- stable skip/failure codes and structured recovery where one exists.
-
-Preview and apply rebuild the same deterministic internal plan. No plan file is
-required or exposed as a public format.
-
-### 3. Specialist commands
-
-The existing `img-scan`, `img-quant`, `img-webp`, `img-jpeg`, `img-resize`,
-`img-diff`, and `img-look` commands may remain as concise Unix-style tools and
-compatibility aliases. They translate flags into typed requests, call the
-engine, and render its result. They do not own an encoder policy, output naming
-rule, validation rule, or JSON variant.
-
-The canonical interface lists the specialists for direct use. New codecs add a
-catalog entry and a strategy implementation without adding a top-level command.
-
-### 4. Future GUI and stable API
-
-A future GUI will be built from scratch after the engine contracts stabilize.
-It will call the typed engine in process or through a stable structured API. It
-will not spawn a CLI, parse human output, or inherit an earlier UI branch.
-
-The CLI, agent protocol, and GUI therefore use the same behavior.
-
-## Capability catalog
-
-Each capability has a stable identifier and machine-readable semantic facts:
-
-- supported intents, input formats, and output formats;
-- loss model: pixel-identical, lossless pixels, near-lossless, or lossy;
-- alpha, animation, orientation, colour-profile, and metadata behavior;
-- dimension, alpha, pixel, and metadata promises;
-- verification method, destructive effects, and automatic-selection eligibility.
-
-`pixelita capabilities --json` and the planner read the same compile-time
-catalog. The response also identifies the build and schema. Clients discover
-support; they do not infer it from executable names.
-
-Schema versions change only for incompatible meaning or shape. Additive fields
-remain backward compatible. Every result declares its schema version and every
-capability/parameter has stable semantics across interfaces.
-
-## Safety contract
-
-- Explicit files with unsupported types are argument errors. Directory scans
-  may legitimately find no matching files.
-- Invalid or conflicting options fail before decoding or writing. Values are
-  never silently clamped to a different request.
-- Every output path is planned before parallel work begins. Collisions fail the
-  plan; two inputs never race to one destination.
-- Source overwrite or deletion requires explicit destructive intent in the
-  request and appears in both plan and result. Avoid negative retention flags
-  for deletion.
-- Writes are atomic where the platform permits. A failed write does not leave a
-  partial result or remove a source.
-- Threshold rejection is a successful safety decision (`skipped`), distinct
-  from execution failure. Results state which threshold rejected the candidate.
-- Human prose is explanatory. Agents do not need to parse it for a value,
-  recovery step, output path, or routing decision.
-
-## Current boundary
-
-- Canonical optimization and specialist writers share destination preflight,
-  atomic writes, and candidate verdict policy.
-- Legacy `pixelita scan`, `quant`, `webp`, `jpeg`, `resize`, `diff`, and `look`
-  aliases remain available.
-- Specialist commands keep their expert flags and presentation; moving every
-  parser into the engine is not required for the task interface.
-- A future GUI must use the typed engine or a stable API. GUI work and a public
-  Go API are outside this milestone.
-
-The pure-Go, no-cgo, single `go build -o bin/ ./cmd/...` constraint remains.
-Compatibility wrappers can still be separate binaries; package count does not
-define the product model.
-
-## Evaluation gates
-
-The canonical interface is evaluated on whether a weaker model completes these cases without the
-Pixelita skill:
-
-1. Find the canonical command and prove which build it is using.
-2. Inspect a mixed directory quickly, then request a measured plan.
-3. Ask to reduce web transfer size and receive an explained choice between
-   resize, palette quantization, lossless JPEG optimization, and lossy encoding.
-4. Execute a dry run, apply the plan, and verify whole-image and worst-region
-   fidelity without inventing a metric implementation.
-5. Recover from an unsupported explicit file, invalid range, conflicting sizing
-   modes, output collision, unwritable destination, and partial directory
-   failure using structured recovery information.
-6. Refuse a below-threshold candidate without treating the safe skip as a tool
-   crash.
-7. Require explicit authorization before overwrite or deletion and prove the
-   source survives every failed operation.
-8. Add a hypothetical codec through catalog data and a strategy implementation
-   without adding a new top-level workflow.
-
-Track command count, tool-call count, invalid-call recovery count, prose parsing,
-and task success. A feature that adds flags but does not reduce calls or recovery
-work has not improved agent usability.
+Cross-platform CI is configured; a local Windows run is not proof that the
+hosted Linux job passed. Real-corpus and agent usability trials remain separate
+acceptance evidence; see refactor-status.md.

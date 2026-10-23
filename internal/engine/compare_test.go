@@ -1,4 +1,4 @@
-package main
+package engine
 
 import (
 	"os"
@@ -99,5 +99,17 @@ func TestStripSuffix(t *testing.T) {
 		if got := stripSuffix(in); got != want {
 			t.Errorf("stripSuffix(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestPairUpChecksEveryVariant(t *testing.T) {
+	a, b := t.TempDir(), t.TempDir()
+	os.WriteFile(filepath.Join(a, "hero.png"), []byte("x"), 0600)
+	for _, n := range []string{"hero-320w.webp", "hero-640w.webp"} {
+		os.WriteFile(filepath.Join(b, n), []byte("x"), 0600)
+	}
+	pairs, err := pairUp(a, b)
+	if err != nil || len(pairs) != 2 {
+		t.Fatalf("lost variants: %+v %v", pairs, err)
 	}
 }

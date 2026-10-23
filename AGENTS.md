@@ -90,14 +90,16 @@ errors. Directories may contain unrelated files and may produce an empty result.
 |---|---|
 | `internal/engine` | Typed plans, canonical routing, and the static capability catalog |
 | `internal/ops` | Image operations and current per-file decisions |
-| `internal/report` | Table and JSON report envelope |
+| `internal/result` | Typed outcomes, schema envelope, and accounting |
+| `internal/report` | Table and JSON rendering |
+| `internal/batch` | Path collection and bounded scheduling |
 | `internal/quant` | Histogram, median cut, k-means, and dithered remap |
 | `internal/jpegopt` | Lossless JPEG coefficient-stream optimization |
 | `internal/resize` | Linear-light resampling with premultiplied alpha |
 | `internal/metric` | PSNR and SSIM |
 | `internal/imgio` | Decode, encode, and header inspection |
 | `internal/imgio/exif.go` | EXIF orientation applied during decode |
-| `internal/cli` | Path collection and worker scheduling |
+| `internal/cli` | Flag parsing, diagnostics, and process integration |
 
 New operations start in the typed engine. Add `cmd/img-<name>` only when a
 specialist wrapper improves the human workflow. Thin writing commands support

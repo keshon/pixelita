@@ -40,3 +40,9 @@ outside the input tree so rescans do not include generated variants.
 
 AVIF and JPEG XL are out of scope because Pixelita requires production-quality
 pure-Go codecs and no cgo dependency.
+
+`--format auto` permits measured selection between same-format and WebP.
+`--format webp --widths 320,640` creates derivatives directly from the source.
+Omitted thresholds use defaults; zero disables PSNR/SSIM checks, while zero
+minimum gain still refuses growth. `--exact-pixels` and `--preserve-metadata`
+currently select only the guaranteed baseline-JPEG strategy.

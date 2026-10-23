@@ -25,3 +25,10 @@ result. An explicitly supplied unsupported file is an argument error.
 Do not reimplement Pixelita's crops, previews, resize filters, PSNR, SSIM, tonal
 levels, or pixel probing in Python or ImageMagick. Use the typed commands so
 humans, local agents, cloud agents, and a future GUI share one behavior.
+
+Use `totals.inputs` and `totals.outcomes` separately. `inventoryBytes` counts
+known source bytes once; `inventoryKnownInputs` identifies coverage.
+`writtenOutputs`/`writtenBytes` count actual writes and
+`predictedOutputs`/`predictedBytes` count planned outputs. Legacy `summary`
+remains outcome-based. Check `written`, `verification`, and candidate decisions;
+absence of a PSNR number alone does not prove identity.

@@ -1,4 +1,30 @@
-# Evaluation harness
+# Current acceptance workflow
+
+Build Pixelita, then run the deterministic corpus and CLI harness:
+
+```powershell
+go build -o bin/ ./cmd/...
+python eval/generate_corpus.py "$env:TEMP/pixelita-eval/corpus"
+python eval/refactor_check.py bin/pixelita.exe "$env:TEMP/pixelita-eval/corpus" "$env:TEMP/pixelita-eval/results.json"
+```
+
+Pillow is an evaluation-only dependency for generating the corpus. Pixelita's
+build and runtime remain pure Go. The harness runs 14 CLI calls and records
+arguments, exit codes, elapsed time, and full JSON results. It tests preview/apply
+parity, JPEG identity, measured format selection, resize-to-WebP, worst regions,
+multi-region viewing, and invalid threshold recovery. Temporary outputs are
+removed automatically; inputs are retained.
+
+This is deterministic acceptance, not an agent usability trial or a representative
+compression benchmark. Timings include process startup and describe one local
+run. No broad performance claim is made.
+
+## Historical milestone-two comparison
+
+The measurements below predate the refactor and its updated fidelity and
+metadata policy. They are retained for provenance, not current benchmark claims.
+
+### Evaluation harness
 
 These scripts create the fixed milestone-two corpus outside the repository and
 run the comparison Pillow workflow. They are evaluation dependencies, not

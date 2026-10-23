@@ -1,10 +1,13 @@
 package ops
 
 import (
+	"bytes"
 	"errors"
+	"github.com/keshon/pixelita/internal/imgio"
 	"image"
 	"image/color"
 	"image/png"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -81,7 +84,7 @@ func TestAtomicWriteVerificationFailurePreservesDestination(t *testing.T) {
 
 func TestEvaluateCandidateSharedVerdict(t *testing.T) {
 	p := CandidatePolicy{MinGain: 10, MinPSNR: 30}
-	if got := EvaluateCandidate(Candidate{BytesBefore: 100, BytesAfter: 95}, p); got.Code != "gain_below_minimum" {
+	if got := EvaluateCandidate(Candidate{BytesBefore: 100, BytesAfter: 95, PSNR: 40, HasPSNR: true}, p); got.Code != "gain_below_minimum" {
 		t.Fatalf("gain verdict = %#v", got)
 	}
 	if got := EvaluateCandidate(Candidate{BytesBefore: 100, BytesAfter: 50, PSNR: 20, HasPSNR: true}, p); got.Code != "fidelity_below_minimum" {
@@ -154,12 +157,13 @@ func TestWebPDeletesSourceOnlyWhenExplicit(t *testing.T) {
 		if err := f.Close(); err != nil {
 			t.Fatal(err)
 		}
+		uncompressPNG(t, path)
 		return path
 	}
 
 	source := makeSource("keep.png")
 	o := DefaultWebP()
-	o.SkipPalette, o.MinGain, o.MinPSNR = false, -100, 0
+	o.SkipPalette, o.MinGain, o.MinPSNR = false, 0, 0
 	o.Output = filepath.Join(t.TempDir(), "keep.webp")
 	if got := WebP(source, o); got.Status != "done" {
 		t.Fatalf("keep conversion = %#v", got)
@@ -182,5 +186,113 @@ func TestResizeKeepDoesNotChangeUnsupportedFormat(t *testing.T) {
 	img := image.NewNRGBA(image.Rect(0, 0, 2, 2))
 	if _, _, err := EncodeAs(img, "webp", DefaultResize(), nil); err == nil {
 		t.Fatal("keep silently changed WebP to another format")
+	}
+}
+
+func uncompressPNG(t *testing.T, path string) {
+	t.Helper()
+	img, _, _, err := imgio.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b bytes.Buffer
+	enc := png.Encoder{CompressionLevel: png.NoCompression}
+	if err := enc.Encode(&b, img); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, b.Bytes(), 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCandidateRequiresRequestedEvidence(t *testing.T) {
+	for _, c := range []Candidate{
+		{BytesBefore: 100, BytesAfter: 50},
+		{BytesBefore: 100, BytesAfter: 50, HasPSNR: true, PSNR: math.NaN()},
+	} {
+		if got := EvaluateCandidate(c, CandidatePolicy{MinPSNR: 30}); got.Accept || got.Code != "fidelity_unavailable" {
+			t.Fatalf("accepted missing evidence: %+v", got)
+		}
+	}
+	for _, n := range []float64{math.NaN(), math.Inf(1), -1} {
+		if (CandidatePolicy{MinPSNR: n}).Validate() == nil {
+			t.Fatalf("accepted %v", n)
+		}
+	}
+}
+
+func TestAtomicWriteDoesNotClobberLateDestination(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "out")
+	err := AtomicWrite(path, []byte("new"), false, func([]byte) error { return os.WriteFile(path, []byte("other writer"), 0600) })
+	if err == nil {
+		t.Fatal("overwrote concurrent destination")
+	}
+	b, err := os.ReadFile(path)
+	if err != nil || string(b) != "other writer" {
+		t.Fatalf("lost destination: %q %v", b, err)
+	}
+}
+
+func TestQuantThresholdMatchesDiff(t *testing.T) {
+	src := writePNG(t, t.TempDir(), "gradient.png", 64, 64)
+	uncompressPNG(t, src)
+	o := DefaultQuant()
+	o.MinGain = 0
+	o.MinPSNR = 0
+	o.Colors = 4
+	got := Quant(src, o)
+	if got.Status != "done" {
+		t.Fatalf("quant: %+v", got)
+	}
+	diff := Diff(src, got.Output, DefaultDiff())
+	for _, key := range []string{"psnr", "ssim"} {
+		a, _ := got.Num(key)
+		b, _ := diff.Num(key)
+		if a != b {
+			t.Fatalf("%s quant=%v diff=%v", key, a, b)
+		}
+	}
+	o.DryRun = true
+	o.MinSSIM = 1
+	if got := Quant(src, o); got.Code != "fidelity_below_minimum" {
+		t.Fatalf("ignored SSIM: %+v", got)
+	}
+}
+
+func TestAlphaOnlyDamageFailsFidelity(t *testing.T) {
+	dir := t.TempDir()
+	paths := []string{filepath.Join(dir, "a.png"), filepath.Join(dir, "b.png")}
+	for i, p := range paths {
+		img := image.NewNRGBA(image.Rect(0, 0, 8, 8))
+		for y := 0; y < 8; y++ {
+			for x := 0; x < 8; x++ {
+				img.SetNRGBA(x, y, color.NRGBA{R: 20, G: 30, B: 40, A: uint8(255 - i*200)})
+			}
+		}
+		raw, err := imgio.EncodePNG(img)
+		if err != nil {
+			t.Fatal(err)
+		}
+		os.WriteFile(p, raw, 0600)
+	}
+	o := DefaultDiff()
+	o.MinPSNR = 40
+	if got := Diff(paths[0], paths[1], o); got.Status != "failed" {
+		t.Fatalf("alpha damage passed: %+v", got)
+	}
+}
+func TestPreflightRejectsHardlinkInputAlias(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "source")
+	alias := filepath.Join(dir, "alias")
+	if err := os.WriteFile(src, []byte("source"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(src, alias); err != nil {
+		t.Skip(err)
+	}
+	err := PreflightDestinations([]Destination{{Source: src, Output: alias}}, true, false)
+	if err == nil {
+		t.Fatal("alias can overwrite input")
 	}
 }

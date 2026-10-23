@@ -12,8 +12,9 @@ import (
 	"strings"
 
 	"github.com/keshon/pixelita/internal/imgio"
-	"github.com/keshon/pixelita/internal/report"
 	"github.com/keshon/pixelita/internal/resize"
+	"github.com/keshon/pixelita/internal/result"
+	webp "github.com/mayahiro/go-webp"
 )
 
 type ResizeOptions struct {
@@ -46,10 +47,16 @@ func PlanResizeDestinations(path string, o ResizeOptions) ([]Destination, error)
 	if err != nil {
 		return nil, err
 	}
+	if o.Replace && o.Format != "keep" && o.Format != head.Format {
+		return nil, fmt.Errorf("replacement cannot change format; write a separate output")
+	}
 	sizes, _ := o.Targets(head.Width, head.Height)
 	ext := ".png"
 	if head.Format == "jpeg" || o.Format == "jpeg" {
 		ext = ".jpg"
+	}
+	if o.Format == "webp" {
+		ext = ".webp"
 	}
 	if o.Format == "png" {
 		ext = ".png"
@@ -108,14 +115,17 @@ func (o ResizeOptions) Targets(sw, sh int) ([][2]int, string) {
 }
 
 // Resize scales one file into every size the options ask for.
-func Resize(path string, o ResizeOptions) []report.Item {
-	base := report.Item{Path: path, Metrics: map[string]any{}}
+func Resize(path string, o ResizeOptions) []result.Item {
+	base := result.Item{Path: path, Metrics: map[string]any{}}
 
 	img, format, raw, err := imgio.Load(path)
 	if err != nil {
-		return []report.Item{fail(base, err, "decode error")}
+		return []result.Item{fail(base, err, "decode error")}
 	}
 	base.BytesBefore = int64(len(raw))
+	if err := imgio.ReencodeRestriction(raw); err != nil {
+		return []result.Item{skip(base, "unsupported_metadata", err.Error())}
+	}
 	src := imgio.ToNRGBA(img)
 	sw, sh := src.Rect.Dx(), src.Rect.Dy()
 	base.Metrics["from"] = fmt.Sprintf("%dx%d", sw, sh)
@@ -123,17 +133,17 @@ func Resize(path string, o ResizeOptions) []report.Item {
 
 	sizes, reason := o.Targets(sw, sh)
 	if len(sizes) == 0 {
-		return []report.Item{skip(base, "no_resize_needed", reason)}
+		return []result.Item{skip(base, "no_resize_needed", reason)}
 	}
 
-	out := make([]report.Item, 0, len(sizes))
+	out := make([]result.Item, 0, len(sizes))
 	for _, size := range sizes {
 		out = append(out, resizeOne(src, base, path, format, size[0], size[1], o))
 	}
 	return out
 }
 
-func resizeOne(src *image.NRGBA, base report.Item, path, format string, w, h int, o ResizeOptions) report.Item {
+func resizeOne(src *image.NRGBA, base result.Item, path, format string, w, h int, o ResizeOptions) result.Item {
 	item := base
 	item.Metrics = make(map[string]any, len(base.Metrics)+4)
 	for k, v := range base.Metrics {
@@ -145,6 +155,9 @@ func resizeOne(src *image.NRGBA, base report.Item, path, format string, w, h int
 		return skip(item, "upscale_not_permitted", "would upscale")
 	}
 
+	if w <= 0 || h <= 0 || int64(w) > imgio.MaxDecodePixels/int64(h) {
+		return fail(item, fmt.Errorf("resize exceeds %d pixels", imgio.MaxDecodePixels), "invalid output dimensions")
+	}
 	dst := resize.Resize(src, w, h, o.Filter)
 	if o.Fit == "cover" && o.Width > 0 && o.Height > 0 && len(o.Widths) == 0 {
 		dst = resize.Crop(dst, o.Width, o.Height)
@@ -157,12 +170,16 @@ func resizeOne(src *image.NRGBA, base report.Item, path, format string, w, h int
 	if err != nil {
 		return fail(item, err, "encode error")
 	}
+	if _, _, err := imgio.Decode(encoded); err != nil {
+		return fail(item, err, "verification error")
+	}
+	item.Verification = &result.Verification{Status: "verified", Method: "decode"}
 	item.BytesAfter = int64(len(encoded))
 	item.GainPercent = gain(item.BytesBefore, item.BytesAfter)
 	item.Output = o.OutputPath(path, ext, dst.Rect.Dx(), dst.Rect.Dy())
 
 	if o.DryRun {
-		item.Status = report.StatusWould
+		item.Status = result.StatusWould
 		return item
 	}
 	if err := AtomicWrite(item.Output, encoded, o.Overwrite || o.Replace, func(data []byte) error {
@@ -171,7 +188,8 @@ func resizeOne(src *image.NRGBA, base report.Item, path, format string, w, h int
 	}); err != nil {
 		return failCode(item, err, "write_failed", "write error")
 	}
-	item.Status = report.StatusDone
+	item.Written = true
+	item.Status = result.StatusDone
 	return item
 }
 
@@ -207,6 +225,16 @@ func EncodeAs(img *image.NRGBA, format string, o ResizeOptions, metrics map[stri
 		return buf.Bytes(), ".jpg", nil
 	}
 
+	if target == "webp" {
+		var b bytes.Buffer
+		if err := webp.Encode(&b, img, &webp.Options{Quality: 90, Compression: webp.CompressionLossy, Mode: webp.ModeDefault}); err != nil {
+			return nil, "", err
+		}
+		return b.Bytes(), ".webp", nil
+	}
+	if target != "png" {
+		return nil, "", fmt.Errorf("unsupported output format %q", target)
+	}
 	data, err := imgio.EncodePNG(img)
 	return data, ".png", err
 }

@@ -28,7 +28,8 @@ func TestWebPRefusesBelowFloor(t *testing.T) {
 	loose := DefaultWebP()
 	loose.DryRun = true
 	loose.MinPSNR = 0
-	loose.MinGain = -500 // synthetic gradients compress so well PNG wins; accept growth to test the path
+	loose.MinGain = 0
+	uncompressPNG(t, src)
 	got = WebP(src, loose)
 	if got.Status != report.StatusWould {
 		t.Fatalf("status %q, want would: %+v", got.Status, got)

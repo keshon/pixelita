@@ -1,4 +1,8 @@
-# Agent-facing evaluation
+# Historical agent-facing evaluation
+
+This file records pre-refactor milestones and defects. It is not the current
+issue list. See [refactor-status.md](refactor-status.md) for current verification
+and outstanding acceptance work.
 
 ## Milestone-two protocol (fixed before implementation)
 

@@ -13,7 +13,7 @@ func TestIntsSurviveJSONRoundTrip(t *testing.T) {
 	var buf bytes.Buffer
 	r := New("img-look", "shown", false)
 	r.Add(item)
-	if err := r.WriteJSON(&buf); err != nil {
+	if err := WriteJSON(r, &buf); err != nil {
 		t.Fatal(err)
 	}
 	var decoded struct {
@@ -51,7 +51,7 @@ func TestNextActionPathsUseForwardSlashes(t *testing.T) {
 	r := New("pixelita optimize", "optimized", true)
 	r.NextAction = &NextAction{Command: "pixelita", Args: []string{"optimize", `C:\images\a.png`, "--apply"}}
 	var buf bytes.Buffer
-	if err := r.WriteJSON(&buf); err != nil {
+	if err := WriteJSON(r, &buf); err != nil {
 		t.Fatal(err)
 	}
 	if bytes.Contains(buf.Bytes(), []byte(`C:\\images`)) {
@@ -59,5 +59,19 @@ func TestNextActionPathsUseForwardSlashes(t *testing.T) {
 	}
 	if !bytes.Contains(buf.Bytes(), []byte(`C:/images/a.png`)) {
 		t.Fatalf("normalized path missing: %s", buf.String())
+	}
+}
+
+func TestAccountingSeparatesInputsOutcomesAndWrites(t *testing.T) {
+	r := New("resize", "resized", false)
+	r.Add(Item{Path: "source.png", Output: "small.png", BytesBefore: 100, BytesAfter: 20, Status: StatusDone, Written: true})
+	r.Add(Item{Path: "source.png", Output: "large.png", BytesBefore: 100, BytesAfter: 40, Status: StatusWould})
+	r.Finish()
+	if r.Totals["inputs"] != 1 || r.Totals["outcomes"] != 2 || r.Totals["inventoryBytes"] != int64(100) || r.Totals["writtenBytes"] != int64(20) || r.Totals["predictedBytes"] != int64(40) {
+		t.Fatalf("accounting: %+v", r.Totals)
+	}
+	r.Finish()
+	if r.Totals["writtenBytes"] != int64(20) {
+		t.Fatal("Finish double-counted")
 	}
 }

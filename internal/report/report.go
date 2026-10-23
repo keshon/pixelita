@@ -1,4 +1,4 @@
-// Package report is the shared output contract for every tool in this repo.
+// Package report renders typed operation results as tables or schema-2 JSON.
 //
 // The tools are meant to be driven by a person at a terminal or by an agent.
 // Every tool builds the same structure and renders it either as a table or as
@@ -11,54 +11,30 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
+
+	"github.com/keshon/pixelita/internal/result"
 )
 
-// Version is the schema version of the JSON output. Consumers should check it.
-const Version = "2"
+const Version = result.Version
 
-type Status string
+type Status = result.Status
 
 const (
-	StatusDone    Status = "done"    // the file was written
-	StatusWould   Status = "would"   // dry run: it would have been written
-	StatusSkipped Status = "skipped" // deliberately left alone
-	StatusFailed  Status = "failed"
+	StatusDone    = result.StatusDone
+	StatusWould   = result.StatusWould
+	StatusSkipped = result.StatusSkipped
+	StatusFailed  = result.StatusFailed
 )
 
-// NextAction is a shell-independent recovery step. Command and Args are kept
-// separate so callers never need to parse or quote a command string.
-type NextAction struct {
-	Command string   `json:"command"`
-	Args    []string `json:"args"`
-}
+type NextAction = result.NextAction
+type BuildInfo = result.BuildInfo
+type CandidateDecision = result.CandidateDecision
+type Verification = result.Verification
+type Item = result.Item
+type Summary = result.Summary
+type Report = result.Report
 
-type BuildInfo struct {
-	Revision      string `json:"revision,omitempty"`
-	Time          string `json:"time,omitempty"`
-	Modified      bool   `json:"modified"`
-	ModuleVersion string `json:"moduleVersion,omitempty"`
-	Available     bool   `json:"available"`
-}
-
-// Item is one file's outcome. Numbers common to every tool are named fields;
-// anything tool-specific goes in Metrics, so the schema does not have to grow a
-// column every time a tool learns something new.
-type Item struct {
-	Path        string         `json:"path"`
-	Output      string         `json:"output,omitempty"`
-	Status      Status         `json:"status"`
-	Code        string         `json:"code,omitempty"`
-	Reason      string         `json:"reason,omitempty"`
-	Hint        string         `json:"hint,omitempty"`
-	NextAction  *NextAction    `json:"nextAction,omitempty"`
-	BytesBefore int64          `json:"bytesBefore,omitempty"`
-	BytesAfter  int64          `json:"bytesAfter,omitempty"`
-	GainPercent float64        `json:"gainPercent,omitempty"`
-	Metrics     map[string]any `json:"metrics,omitempty"`
-	Error       string         `json:"error,omitempty"`
-}
-
-func (i Item) Changed() bool { return i.Status == StatusDone || i.Status == StatusWould }
+func New(tool, verb string, dry bool) *Report { return result.New(tool, verb, dry) }
 
 // Action renders an outcome for a table cell: what happened, and why if the
 // tool decided not to act.
@@ -76,169 +52,9 @@ func Action(i Item, verb string) string {
 	return s
 }
 
-// Num reads a numeric metric. Metrics are a loose map so the schema does not
-// have to grow a field every time a tool learns to measure something.
-func (i Item) Num(key string) (float64, bool) {
-	switch v := i.Metrics[key].(type) {
-	case float64:
-		return v, true
-	case float32:
-		return float64(v), true
-	case int:
-		return float64(v), true
-	case int8:
-		return float64(v), true
-	case int16:
-		return float64(v), true
-	case int32:
-		return float64(v), true
-	case int64:
-		return float64(v), true
-	case uint:
-		return float64(v), true
-	case uint32:
-		return float64(v), true
-	case uint64:
-		return float64(v), true
-	case json.Number:
-		if f, err := v.Float64(); err == nil {
-			return f, true
-		}
-	}
-	return 0, false
-}
-
-// Str reads a string metric.
-func (i Item) Str(key string) string {
-	s, _ := i.Metrics[key].(string)
-	return s
-}
-
-// Ints reads a []int metric, tolerating the []any a JSON round-trip produces.
-// Agents parse -json output after it has been decoded once already, so a strict
-// []int assertion would silently drop levels and atWidth figures.
-func (i Item) Ints(key string) ([]int, bool) {
-	switch v := i.Metrics[key].(type) {
-	case []int:
-		return v, true
-	case []int64:
-		out := make([]int, len(v))
-		for j, n := range v {
-			out[j] = int(n)
-		}
-		return out, true
-	case []any:
-		out := make([]int, 0, len(v))
-		for _, e := range v {
-			f, ok := numAny(e)
-			if !ok {
-				return nil, false
-			}
-			out = append(out, int(f))
-		}
-		return out, true
-	}
-	return nil, false
-}
-
-func numAny(v any) (float64, bool) {
-	switch n := v.(type) {
-	case float64:
-		return n, true
-	case float32:
-		return float64(n), true
-	case int:
-		return float64(n), true
-	case int64:
-		return float64(n), true
-	case uint64:
-		return float64(n), true
-	case json.Number:
-		f, err := n.Float64()
-		return f, err == nil
-	}
-	return 0, false
-}
-
-type Summary struct {
-	Files       int     `json:"files"`
-	Changed     int     `json:"changed"`
-	Skipped     int     `json:"skipped"`
-	Failed      int     `json:"failed"`
-	BytesBefore int64   `json:"bytesBefore"`
-	BytesAfter  int64   `json:"bytesAfter"`
-	GainPercent float64 `json:"gainPercent"`
-}
-
-type Report struct {
-	Tool         string         `json:"tool"`
-	Schema       string         `json:"schema"`
-	DryRun       bool           `json:"dryRun"`
-	Items        []Item         `json:"items"`
-	Summary      Summary        `json:"summary"`
-	Notes        []string       `json:"notes,omitempty"`
-	Totals       map[string]any `json:"totals,omitempty"`
-	Capabilities any            `json:"capabilities,omitempty"`
-	Build        *BuildInfo     `json:"build,omitempty"`
-	NextAction   *NextAction    `json:"nextAction,omitempty"`
-
-	// Verb is how this tool describes a finished item, as a past participle:
-	// "written", "converted", "resized". A dry run turns it into "would be
-	// written", which is why the participle rather than the infinitive.
-	// Table output only.
-	Verb string `json:"-"`
-}
-
-func New(tool, verb string, dryRun bool) *Report {
-	return &Report{Tool: tool, Schema: Version, Verb: verb, DryRun: dryRun}
-}
-
-func (r *Report) Add(item Item) { r.Items = append(r.Items, item) }
-
-func (r *Report) Note(format string, args ...any) {
-	r.Notes = append(r.Notes, fmt.Sprintf(format, args...))
-}
-
-// Finish totals up the items. Only changed files count towards the byte totals:
-// a skipped file keeps its original size, so counting it would dilute the
-// saving into meaninglessness.
-func (r *Report) Finish() {
-	if r.Items == nil {
-		r.Items = []Item{} // an empty run is an empty list, not a null
-	}
-	s := Summary{Files: len(r.Items)}
-	for _, it := range r.Items {
-		switch {
-		case it.Status == StatusFailed:
-			s.Failed++
-		case it.Changed():
-			s.Changed++
-			s.BytesBefore += it.BytesBefore
-			s.BytesAfter += it.BytesAfter
-		default:
-			s.Skipped++
-		}
-	}
-	for i := range r.Items {
-		if r.Items[i].Code != "" {
-			continue
-		}
-		switch r.Items[i].Status {
-		case StatusFailed:
-			r.Items[i].Code = "operation_failed"
-		case StatusSkipped:
-			r.Items[i].Code = "not_selected"
-		}
-	}
-	if s.BytesBefore > 0 {
-		s.GainPercent = (1 - float64(s.BytesAfter)/float64(s.BytesBefore)) * 100
-	}
-	r.Summary = s
-}
-
 // WriteJSON emits the report as one JSON object. Paths use forward slashes so
 // the output is the same on every platform and reads sanely in a browser.
-func (r *Report) WriteJSON(w io.Writer) error {
+func WriteJSON(r *Report, w io.Writer) error {
 	out := *r
 	out.NextAction = normalizedAction(r.NextAction)
 	out.Items = make([]Item, len(r.Items))
@@ -274,7 +90,7 @@ type Column struct {
 
 // WriteTable renders the report for a human. Unchanged files are hidden unless
 // verbose, because the interesting output is what the tool decided to do.
-func (r *Report) WriteTable(w io.Writer, cols []Column, verbose bool) {
+func WriteTable(r *Report, w io.Writer, cols []Column, verbose bool) {
 	line := func(cells []string) {
 		var b strings.Builder
 		for i, c := range cols {
@@ -316,10 +132,14 @@ func (r *Report) WriteTable(w io.Writer, cols []Column, verbose bool) {
 	}
 	fmt.Fprintf(w, "%s: %d, skipped: %d, failed: %d\n",
 		verb, r.Summary.Changed, r.Summary.Skipped, r.Summary.Failed)
-	if r.Summary.BytesBefore > 0 {
-		fmt.Fprintf(w, "size: %s -> %s, saved %s (%.0f%%)\n",
-			Size(r.Summary.BytesBefore), Size(r.Summary.BytesAfter),
-			Size(r.Summary.BytesBefore-r.Summary.BytesAfter), r.Summary.GainPercent)
+	if r.Totals != nil {
+		fmt.Fprintf(w, "inputs: %v, outcomes: %v; known input bytes: %v\n", r.Totals["inputs"], r.Totals["outcomes"], r.Totals["inventoryBytes"])
+		if n, ok := r.Totals["writtenOutputs"].(int); ok && n > 0 {
+			fmt.Fprintf(w, "written: %d outputs, %v bytes\n", n, r.Totals["writtenBytes"])
+		}
+		if n, ok := r.Totals["predictedOutputs"].(int); ok && n > 0 {
+			fmt.Fprintf(w, "predicted: %d outputs, %v bytes\n", n, r.Totals["predictedBytes"])
+		}
 	}
 	for _, n := range r.Notes {
 		fmt.Fprintln(w, n)
@@ -328,15 +148,15 @@ func (r *Report) WriteTable(w io.Writer, cols []Column, verbose bool) {
 
 // Emit writes the report in whichever form was asked for and returns the
 // process exit code.
-func (r *Report) Emit(w io.Writer, cols []Column, asJSON, verbose bool) int {
+func Emit(r *Report, w io.Writer, cols []Column, asJSON, verbose bool) int {
 	r.Finish()
 	if asJSON {
-		if err := r.WriteJSON(w); err != nil {
+		if err := WriteJSON(r, w); err != nil {
 			fmt.Fprintln(w, err)
 			return 1
 		}
 	} else {
-		r.WriteTable(w, cols, verbose)
+		WriteTable(r, w, cols, verbose)
 	}
 	if r.Summary.Failed > 0 {
 		return 1

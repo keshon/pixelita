@@ -10,9 +10,10 @@ import (
 	webp "github.com/mayahiro/go-webp"
 
 	"github.com/keshon/pixelita/internal/imgio"
+	"github.com/keshon/pixelita/internal/metric"
 	"github.com/keshon/pixelita/internal/quant"
-	"github.com/keshon/pixelita/internal/report"
 	"github.com/keshon/pixelita/internal/resize"
+	"github.com/keshon/pixelita/internal/result"
 )
 
 type ScanOptions struct {
@@ -22,6 +23,7 @@ type ScanOptions struct {
 	WebPQuality int
 	MinGain     float64
 	MinPSNR     float64
+	MinSSIM     float64
 	// DisplayWidths are the widths these images might actually be shown at.
 	//
 	// A curve rather than a threshold, and that was a correction. The first
@@ -49,14 +51,14 @@ type ScanOptions struct {
 }
 
 func DefaultScan() ScanOptions {
-	return ScanOptions{Colors: 256, Effort: 4, WebPQuality: 90, MinGain: 10,
+	return ScanOptions{Colors: 256, Effort: 6, WebPQuality: 90, MinGain: 10,
 		MinPSNR: 30, DisplayWidths: []int{640, 1280, 1920}}
 }
 
 // Scan describes one file and, unless asked to be quick, measures what each
 // tool would actually achieve on it.
-func Scan(path string, o ScanOptions) report.Item {
-	item := report.Item{Path: path, Metrics: map[string]any{}}
+func Scan(path string, o ScanOptions) result.Item {
+	item := result.Item{Path: path, Metrics: map[string]any{}}
 
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -108,7 +110,7 @@ func Scan(path string, o ScanOptions) report.Item {
 		// Worded so it does not read as a fault. -quick is asked for, and
 		// "skipped: not measured" looks like something went wrong with a file
 		// that is in fact perfectly fine — it just was not encoded.
-		item.Status = report.StatusSkipped
+		item.Status = result.StatusSkipped
 		item.Code = "headers_only"
 		item.Reason = "headers only"
 		return item
@@ -133,22 +135,34 @@ func Scan(path string, o ScanOptions) report.Item {
 			item.Metrics["coloursAtLeast"] = q.Distinct
 			delete(item.Metrics, "colours")
 		}
-		if encoded, err := imgio.EncodePalettedPNG(q.Image); err == nil {
+		encoded, encodeErr := imgio.EncodePalettedPNG(q.Image)
+		if encodeErr == nil {
+			encoded, encodeErr = imgio.PreservePNGMetadata(raw, encoded)
+		}
+		if encodeErr == nil {
 			item.Metrics["quantBytes"] = int64(len(encoded))
 			item.Metrics["quantGain"] = gain(item.BytesBefore, int64(len(encoded)))
-			if !math.IsInf(q.PSNR, 1) {
-				item.Metrics["quantPSNR"] = q.PSNR
+			decoded, _, decodeErr := imgio.Decode(encoded)
+			if decodeErr == nil {
+				measured, measureErr := metric.Compare(img, decoded)
+				if measureErr == nil {
+					if !math.IsInf(measured.PSNR, 1) {
+						item.Metrics["quantPSNR"] = measured.PSNR
+					}
+					item.Metrics["quantSSIM"] = measured.SSIM
+					item.Metrics["quantAccepted"] = EvaluateCandidate(Candidate{BytesBefore: item.BytesBefore, BytesAfter: int64(len(encoded)), PSNR: measured.PSNR, PSNRAlpha: measured.PSNRAlpha, HasPSNRAlpha: true, SSIM: measured.SSIM, HasPSNR: true, HasSSIM: true}, CandidatePolicy{MinGain: o.MinGain, MinPSNR: o.MinPSNR, MinSSIM: o.MinSSIM}).Accept
+				}
 			}
 		}
 	}
 
 	webpCandidate, err := EvaluateWebPCandidate(img, item.BytesBefore, &webp.Options{
 		Quality: o.WebPQuality, Compression: webp.CompressionLossy, Mode: webp.ModeDefault,
-	}, CandidatePolicy{MinGain: o.MinGain, MinPSNR: o.MinPSNR})
+	}, CandidatePolicy{MinGain: o.MinGain, MinPSNR: o.MinPSNR, MinSSIM: o.MinSSIM})
 	if err == nil {
 		item.Metrics["webpBytes"] = webpCandidate.Candidate.BytesAfter
 		item.Metrics["webpGain"] = webpCandidate.Verdict.Gain
-		item.Metrics["webpAccepted"] = webpCandidate.Verdict.Accept
+		item.Metrics["webpAccepted"] = webpCandidate.Verdict.Accept && head.ColourType != "palette" && imgio.ReencodeRestriction(raw) == nil
 		if !math.IsInf(webpCandidate.Candidate.PSNR, 1) {
 			item.Metrics["webpPSNR"] = webpCandidate.Candidate.PSNR
 		}
@@ -185,14 +199,11 @@ func Scan(path string, o ScanOptions) report.Item {
 
 // chooseBest picks the conversion worth recommending: the smallest result that
 // clears both the size and the fidelity floor.
-func chooseBest(item *report.Item, head imgio.Header, o ScanOptions) {
+func chooseBest(item *result.Item, head imgio.Header, o ScanOptions) {
 	best, bestBytes := "", item.BytesBefore
 
 	if b, ok := item.Num("quantBytes"); ok && int64(b) < bestBytes {
-		psnr, lossy := item.Num("quantPSNR")
-		v := EvaluateCandidate(Candidate{BytesBefore: item.BytesBefore, BytesAfter: int64(b), PSNR: psnr, HasPSNR: lossy},
-			CandidatePolicy{MinGain: o.MinGain, MinPSNR: o.MinPSNR})
-		if v.Accept {
+		if accepted, _ := item.Metrics["quantAccepted"].(bool); accepted {
 			best, bestBytes = "quant", int64(b)
 		}
 	}
@@ -203,13 +214,13 @@ func chooseBest(item *report.Item, head imgio.Header, o ScanOptions) {
 	}
 
 	if best == "" {
-		item.Status = report.StatusSkipped
+		item.Status = result.StatusSkipped
 		item.Code = "no_beneficial_strategy"
 		item.Reason = "optimal"
 		return
 	}
 
-	item.Status = report.StatusWould
+	item.Status = result.StatusWould
 	item.BytesAfter = bestBytes
 	item.GainPercent = gain(item.BytesBefore, bestBytes)
 	item.Metrics["best"] = best
@@ -227,22 +238,24 @@ const PaletteCaveat = "needs -skip-palette=false"
 
 // ScanSummary adds the lines that make a scan worth reading: what each tool
 // would save across the whole set, rather than file by file.
-func ScanSummary(rep *report.Report, o ScanOptions) {
+func ScanSummary(rep *result.Report, o ScanOptions) {
 	if o.Quick {
 		var total, meta int64
 		var withMeta int
 		formats := map[string]int{}
 		for _, it := range rep.Items {
 			total += it.BytesBefore
-			formats[it.Str("format")]++
+			if f := it.Str("format"); f != "" {
+				formats[f]++
+			}
 			if m, ok := it.Num("metadataBytes"); ok {
 				meta += int64(m)
 				withMeta++
 			}
 		}
-		rep.Note("%d files, %s%s", len(rep.Items), report.Size(total), formatBreakdown(formats))
+		rep.Note("%d files, %s%s", len(rep.Items), fmt.Sprintf("%d bytes", total), formatBreakdown(formats))
 		if meta > 0 {
-			rep.Note("metadata: %s in %d files", report.Size(meta), withMeta)
+			rep.Note("metadata: %s in %d files", fmt.Sprintf("%d bytes", meta), withMeta)
 		}
 		if wide := countWide(rep); wide > 0 {
 			rep.Note("oversize: %d files wider than %dpx — run without -quick to measure "+
@@ -257,11 +270,11 @@ func ScanSummary(rep *report.Report, o ScanOptions) {
 	var total int64
 	for _, it := range rep.Items {
 		total += it.BytesBefore
-		if b, ok := it.Num("quantBytes"); ok && gain(it.BytesBefore, int64(b)) >= o.MinGain {
+		if b, ok := it.Num("quantBytes"); ok && it.Metrics["quantAccepted"] == true {
 			quantFiles++
 			quantSaved += it.BytesBefore - int64(b)
 		}
-		if b, ok := it.Num("webpBytes"); ok && gain(it.BytesBefore, int64(b)) >= o.MinGain {
+		if b, ok := it.Num("webpBytes"); ok && it.Metrics["webpAccepted"] == true {
 			webpFiles++
 			webpSaved += it.BytesBefore - int64(b)
 		}
@@ -289,13 +302,13 @@ func ScanSummary(rep *report.Report, o ScanOptions) {
 		}
 	}
 	if quantFiles > 0 {
-		rep.Note("img-quant: %d files, would save %s", quantFiles, report.Size(quantSaved))
+		rep.Note("img-quant: %d files, would save %s", quantFiles, fmt.Sprintf("%d bytes", quantSaved))
 	}
 	if webpFiles > 0 {
-		rep.Note("img-webp:  %d files, would save %s", webpFiles, report.Size(webpSaved))
+		rep.Note("img-webp:  %d files, would save %s", webpFiles, fmt.Sprintf("%d bytes", webpSaved))
 	}
 	if meta > 0 {
-		rep.Note("metadata:  %s in %d files, dropped by any re-encode", report.Size(meta), metaFiles)
+		rep.Note("metadata:  %s in %d files, preservation depends on selected operation", fmt.Sprintf("%d bytes", meta), metaFiles)
 	}
 	// Last, and deliberately after the codec lines, because it is usually the
 	// larger number and reads as the correction to them: converting a file
@@ -310,7 +323,7 @@ func ScanSummary(rep *report.Report, o ScanOptions) {
 				continue
 			}
 			rep.Note("at %4dpx:  %s for the whole set (%s), %d files are wider than that",
-				w, report.Size(b), report.Percent(gain(total, b), total > 0), wideFiles)
+				w, fmt.Sprintf("%d bytes", b), fmt.Sprintf("%.1f%%", gain(total, b)), wideFiles)
 			structured[strconv.Itoa(w)] = b
 		}
 		if len(structured) > 0 {
@@ -334,7 +347,7 @@ func ScanSummary(rep *report.Report, o ScanOptions) {
 
 // smallest is what a file would weigh after the best conversion available to
 // it, or as it stands if none pays off.
-func smallest(it report.Item) int64 {
+func smallest(it result.Item) int64 {
 	if it.BytesAfter > 0 {
 		return it.BytesAfter
 	}
@@ -349,7 +362,7 @@ func widest(widths []int) int {
 	return w
 }
 
-func countWide(rep *report.Report) int {
+func countWide(rep *result.Report) int {
 	n := 0
 	for _, it := range rep.Items {
 		if _, ok := it.Num("widthOver"); ok {

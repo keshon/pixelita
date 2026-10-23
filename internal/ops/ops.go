@@ -10,25 +10,25 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/keshon/pixelita/internal/report"
+	"github.com/keshon/pixelita/internal/result"
 )
 
 // fail marks an item as failed, keeping the reason short for a table cell and
 // the full error for whoever wants to read it.
-func fail(item report.Item, err error, reason string) report.Item {
+func fail(item result.Item, err error, reason string) result.Item {
 	return failCode(item, err, "operation_failed", reason)
 }
 
-func failCode(item report.Item, err error, code, reason string) report.Item {
-	item.Status = report.StatusFailed
+func failCode(item result.Item, err error, code, reason string) result.Item {
+	item.Status = result.StatusFailed
 	item.Code = code
 	item.Reason = reason
 	item.Error = err.Error()
 	return item
 }
 
-func skip(item report.Item, code, reason string) report.Item {
-	item.Status = report.StatusSkipped
+func skip(item result.Item, code, reason string) result.Item {
+	item.Status = result.StatusSkipped
 	item.Code = code
 	item.Reason = reason
 	return item

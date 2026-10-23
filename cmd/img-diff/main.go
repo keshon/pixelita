@@ -6,16 +6,12 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
-	"sort"
-	"strings"
 
 	"github.com/keshon/pixelita/internal/cli"
-	"github.com/keshon/pixelita/internal/imgio"
+	"github.com/keshon/pixelita/internal/engine"
 	"github.com/keshon/pixelita/internal/ops"
 	"github.com/keshon/pixelita/internal/report"
 )
@@ -51,7 +47,7 @@ func main() {
 	flag.BoolVar(&verbose, "v", false, "list identical pairs too")
 	flag.BoolVar(&showVersion, "version", false, "print which build this is and exit")
 	flag.BoolVar(&asJSON, "json", false, "emit the report as JSON")
-	flag.IntVar(&jobs, "jobs", 0, "parallel comparisons, 0 means one per CPU core")
+	flag.IntVar(&jobs, "jobs", 0, "parallel comparisons, 0 means at most two workers")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "img-diff — measures how far one image is from another\n\n")
@@ -68,6 +64,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  img-diff -min-psnr 35 ./src ./converted\n")
 	}
 	cli.ParseDefaultFlags("img-diff")
+	if err := (ops.CandidatePolicy{MinPSNR: opt.MinPSNR, MinSSIM: opt.MinSSIM}).Validate(); err != nil {
+		cli.ExitArgument("img-diff", "invalid_threshold", err, nil)
+	}
 
 	if showVersion {
 		cli.Version(os.Stdout, "img-diff")
@@ -78,233 +77,19 @@ func main() {
 	if err != nil {
 		cli.ExitArgument("img-diff", "invalid_region", err, nil)
 	}
-	if len(rects) == 1 {
-		opt.Crop = rects[0]
-	}
-
-	// Two routes ask for a set of regions rather than one figure: find the
-	// damaged ones, or name them. They print the same
-	// table, because the answer wanted is the same shape in every case — a row
-	// per place, with every number that belongs on that row.
-	if worst > 0 || len(rects) > 1 {
-		if flag.NArg() != 2 {
-			cli.ExitArgument("img-diff", "expected_two_inputs", fmt.Errorf("expected two image paths"), nil)
-		}
-		var items []report.Item
-		var note string
-		if worst > 0 {
-			ranking := ops.Ranking(by)
-			switch ranking {
-			case ops.RankSSIM, ops.RankPSNR, ops.RankLevels:
-			default:
-				cli.ExitArgument("img-diff", "invalid_option", fmt.Errorf("-by must be ssim, psnr or levels, not %q", by), nil)
-			}
-			items, err = ops.WorstRegions(flag.Arg(0), flag.Arg(1), worst, tile, ranking,
-				levels || ranking == ops.RankLevels)
-			note = "worst by " + by + " first"
-		} else {
-			items, err = ops.MeasureRegions(flag.Arg(0), flag.Arg(1), rects, levels)
-			note = "in the order given"
-		}
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error:", err)
-			os.Exit(1)
-		}
-		rep := report.New("img-diff", "regions", false)
-		for _, it := range items {
-			rep.Add(it)
-		}
-		rep.Note("%s; paste a region into -crop to measure it again, "+
-			"or into img-look -crop to see it", note)
-		os.Exit(rep.Emit(os.Stdout, regionColumns(levels || ops.Ranking(by) == ops.RankLevels),
-			asJSON, verbose))
-	}
 
 	if flag.NArg() != 2 {
-		cli.ExitArgument("img-diff", "expected_two_inputs", fmt.Errorf("expected two image paths"), nil)
+		cli.ExitArgument("img-diff", "expected_two_inputs", fmt.Errorf("expected two paths"), nil)
 	}
-
-	pairs, err := pairUp(flag.Arg(0), flag.Arg(1))
+	rep, err := engine.Compare(engine.CompareRequest{A: flag.Arg(0), B: flag.Arg(1), MinPSNR: opt.MinPSNR, MinSSIM: opt.MinSSIM, StrictSize: opt.StrictSize, Regions: rects, Worst: worst, Tile: tile, By: ops.Ranking(by), Levels: levels, Out: out, Overwrite: opt.Overwrite, Amplify: opt.Amplify, Jobs: jobs})
 	if err != nil {
-		cli.ExitArgument("img-diff", "invalid_input", err, nil)
-	}
-	if out != "" {
-		planned := make([]ops.Destination, 0, len(pairs))
-		for _, pair := range pairs {
-			dest := out
-			if len(pairs) > 1 {
-				dest = filepath.Join(out, stem(pair.a)+".png")
-			}
-			planned = append(planned, ops.Destination{Output: dest})
-		}
-		if err := ops.PreflightDestinations(planned, opt.Overwrite, false); err != nil {
-			code := "invalid_destination"
-			var pe *ops.PlanError
-			if errors.As(err, &pe) {
-				code = pe.Code
-			}
-			cli.ExitArgument("img-diff", code, err, nil)
-		}
-	}
-
-	rep := report.New("img-diff", "compared", false)
-	items := make([]report.Item, len(pairs))
-	cli.Each(len(pairs), jobs, func(i int) {
-		o := opt
-		if out != "" {
-			o.Out = out
-			if len(pairs) > 1 {
-				o.Out = filepath.Join(out, stem(pairs[i].a)+".png")
-			}
-		}
-		items[i] = ops.Diff(pairs[i].a, pairs[i].b, o)
-	})
-	for _, it := range items {
-		rep.Add(it)
+		cli.ExitArgument("img-diff", "invalid_arguments", err, nil)
 	}
 	shape := columns
-	if !opt.Crop.Empty() {
-		shape = cropColumns
+	if len(rects) > 0 || worst > 0 {
+		shape = regionColumns(levels || by == "levels")
 	}
-	os.Exit(rep.Emit(os.Stdout, shape, asJSON, verbose))
-}
-
-type pair struct{ a, b string }
-
-// pairUp resolves the two arguments into the list of comparisons to make.
-func pairUp(a, b string) ([]pair, error) {
-	ai, err := os.Stat(a)
-	if err != nil {
-		return nil, err
-	}
-	bi, err := os.Stat(b)
-	if err != nil {
-		return nil, err
-	}
-	if !ai.IsDir() && !bi.IsDir() {
-		return []pair{{a, b}}, nil
-	}
-	if ai.IsDir() != bi.IsDir() {
-		return nil, fmt.Errorf("compare two files or two directories, not one of each")
-	}
-
-	left, err := cli.Collect([]string{a}, imgio.Extensions...)
-	if err != nil {
-		return nil, err
-	}
-	right, err := cli.Collect([]string{b}, imgio.Extensions...)
-	if err != nil {
-		return nil, err
-	}
-	// Match on the name without its extension: the point is to compare a source
-	// against whatever it was converted into. The tools' own naming (a -min
-	// suffix, resize -320w or -800x600 suffixes) is stripped as a fallback, so
-	// a directory of -min.png files still pairs with its sources — otherwise
-	// the verifier rejects exactly the outputs it exists to check.
-	index := map[string]string{}
-	for _, p := range right {
-		index[stem(p)] = p
-		if s := stripSuffix(stem(p)); s != stem(p) {
-			if _, taken := index[s]; !taken {
-				index[s] = p
-			}
-		}
-	}
-
-	var pairs []pair
-	bestFor := map[string]pair{} // one right file may attract several left
-	// names (a source and an earlier product of it); keep the same-format
-	// claimant, else the first in sorted order. Deterministic either way.
-	for _, p := range left {
-		q, ok := index[stem(p)]
-		if !ok {
-			q, ok = index[stripSuffix(stem(p))]
-		}
-		if !ok {
-			continue
-		}
-		if sameFile(p, q) {
-			// Self-pair: same file walked on both sides (output dir inside
-			// the source tree). Comparing a file with itself is never what
-			// was asked; the "identical" rows drown the real comparisons.
-			continue
-		}
-		if cur, taken := bestFor[q]; taken {
-			if filepath.Ext(cur.a) == filepath.Ext(q) || filepath.Ext(p) != filepath.Ext(q) {
-				continue
-			}
-		}
-		bestFor[q] = pair{p, q}
-	}
-	for _, pr := range bestFor {
-		pairs = append(pairs, pr)
-	}
-	sort.Slice(pairs, func(i, j int) bool { return pairs[i].a < pairs[j].a })
-	if len(pairs) == 0 {
-		return nil, fmt.Errorf("no file names in common between %s and %s", a, b)
-	}
-	return pairs, nil
-}
-
-func stem(p string) string {
-	base := filepath.Base(p)
-	return strings.TrimSuffix(base, filepath.Ext(base))
-}
-
-// stripSuffix removes the output suffixes this toolkit's own tools produce,
-// so a verifier pairs sources with their products. Exact stems always win
-// (see pairUp): this is only the fallback.
-func stripSuffix(s string) string {
-	if strings.HasSuffix(s, "-min") {
-		return strings.TrimSuffix(s, "-min")
-	}
-	for i := len(s) - 1; i >= 0; i-- {
-		if s[i] == '-' {
-			tail := s[i+1:]
-			if isDims(tail) {
-				return s[:i]
-			}
-			break
-		}
-		if !(s[i] >= '0' && s[i] <= '9' || s[i] == 'x' || s[i] == 'w') {
-			break
-		}
-	}
-	return s
-}
-
-// isDims reports -320w or -800x600 tails.
-func isDims(tail string) bool {
-	if strings.HasSuffix(tail, "w") {
-		tail = strings.TrimSuffix(tail, "w")
-	} else {
-		parts := strings.Split(tail, "x")
-		if len(parts) != 2 {
-			return false
-		}
-		tail = parts[0] + parts[1]
-	}
-	if tail == "" {
-		return false
-	}
-	for i := 0; i < len(tail); i++ {
-		if tail[i] < '0' || tail[i] > '9' {
-			return false
-		}
-	}
-	return true
-}
-
-func sameFile(a, b string) bool {
-	aa, err := filepath.Abs(a)
-	if err != nil {
-		return a == b
-	}
-	bb, err := filepath.Abs(b)
-	if err != nil {
-		return a == b
-	}
-	return aa == bb
+	os.Exit(report.Emit(rep, os.Stdout, shape, asJSON, verbose))
 }
 
 // regionColumns is its own set rather than a slice of the one below. A region

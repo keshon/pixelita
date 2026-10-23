@@ -15,8 +15,8 @@ import (
 	"golang.org/x/image/math/fixed"
 
 	"github.com/keshon/pixelita/internal/imgio"
-	"github.com/keshon/pixelita/internal/report"
 	"github.com/keshon/pixelita/internal/resize"
+	"github.com/keshon/pixelita/internal/result"
 )
 
 // Look prepares images to be looked at rather than processed.
@@ -98,17 +98,17 @@ var (
 const sepWidth = 3
 
 // Look builds the composite and returns it along with one report item per input.
-func Look(paths []string, o LookOptions) (*image.NRGBA, []report.Item, error) {
+func Look(paths []string, o LookOptions) (*image.NRGBA, []result.Item, error) {
 	if len(paths) == 0 {
 		return nil, nil, fmt.Errorf("nothing to look at")
 	}
 
 	panels := make([]*image.NRGBA, 0, len(paths))
-	items := make([]report.Item, 0, len(paths))
+	items := make([]result.Item, 0, len(paths))
 	stretchLo, stretchHi := -1, -1
 
 	for _, p := range paths {
-		item := report.Item{Path: p, Metrics: map[string]any{}}
+		item := result.Item{Path: p, Metrics: map[string]any{}}
 		img, _, raw, err := imgio.Load(p)
 		if err != nil {
 			items = append(items, fail(item, err, "decode error"))
@@ -161,6 +161,9 @@ func Look(paths []string, o LookOptions) (*image.NRGBA, []report.Item, error) {
 			}
 		}
 		if o.Zoom > 1 {
+			if int64(src.Rect.Dx())*int64(o.Zoom) > imgio.MaxDecodePixels/(int64(src.Rect.Dy())*int64(o.Zoom)) {
+				return nil, items, fmt.Errorf("magnified preview exceeds %d pixels", imgio.MaxDecodePixels)
+			}
 			src = magnify(src, o.Zoom)
 			item.Metrics["zoom"] = o.Zoom
 		}
@@ -171,13 +174,26 @@ func Look(paths []string, o LookOptions) (*image.NRGBA, []report.Item, error) {
 		}
 
 		item.Metrics["to"] = fmt.Sprintf("%dx%d", src.Rect.Dx(), src.Rect.Dy())
-		item.Status = report.StatusDone
+		item.Status = result.StatusDone
 		items = append(items, item)
 		panels = append(panels, src)
 	}
 
 	if len(panels) == 0 {
 		return nil, items, fmt.Errorf("nothing could be read")
+	}
+	var w, h int64
+	for _, p := range panels {
+		if o.Across {
+			w += int64(p.Rect.Dx() + sepWidth)
+			h = max(h, int64(p.Rect.Dy()))
+		} else {
+			h += int64(p.Rect.Dy() + sepWidth)
+			w = max(w, int64(p.Rect.Dx()))
+		}
+	}
+	if w > imgio.MaxDecodePixels/h {
+		return nil, items, fmt.Errorf("composite exceeds %d pixels", imgio.MaxDecodePixels)
 	}
 	return compose(panels, o.Across), items, nil
 }
@@ -211,18 +227,18 @@ func Probe(path string, points []image.Point) ([]string, error) {
 
 // ProbeItems answers -at in the shared report shape, so -json parses the same
 // way everywhere. Probe stays for human text output.
-func ProbeItems(path string, points []image.Point) []report.Item {
+func ProbeItems(path string, points []image.Point) []result.Item {
 	img, _, raw, err := imgio.Load(path)
-	base := report.Item{Path: path, Metrics: map[string]any{}}
+	base := result.Item{Path: path, Metrics: map[string]any{}}
 	if err != nil {
-		return []report.Item{fail(base, err, "decode error")}
+		return []result.Item{fail(base, err, "decode error")}
 	}
 	base.Metrics["bytes"] = int64(len(raw))
 	src := imgio.ToNRGBA(img)
 	b := src.Rect
-	out := make([]report.Item, 0, len(points))
+	out := make([]result.Item, 0, len(points))
 	for _, pt := range points {
-		item := report.Item{Path: path, Metrics: map[string]any{
+		item := result.Item{Path: path, Metrics: map[string]any{
 			"x": pt.X, "y": pt.Y,
 		}}
 		if !pt.Add(b.Min).In(b) {
@@ -236,7 +252,7 @@ func ProbeItems(path string, points []image.Point) []report.Item {
 		item.Metrics["b"] = int(c.B)
 		item.Metrics["a"] = int(c.A)
 		item.Metrics["hex"] = fmt.Sprintf("#%02x%02x%02x", c.R, c.G, c.B)
-		item.Status = report.StatusDone
+		item.Status = result.StatusDone
 		out = append(out, item)
 	}
 	return out
@@ -291,7 +307,7 @@ func magnify(src *image.NRGBA, n int) *image.NRGBA {
 //
 // The luma range is deliberately not linearised. It answers "did the darkest
 // pixels get crushed towards black", which is a question about stored values.
-func addStats(item *report.Item, src *image.NRGBA) {
+func addStats(item *result.Item, src *image.NRGBA) {
 	one := resize.Resize(src, 1, 1, resize.Box)
 	m := one.NRGBAAt(one.Rect.Min.X, one.Rect.Min.Y)
 	if m.A == 0 {

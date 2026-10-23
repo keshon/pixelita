@@ -2,6 +2,7 @@ package ops
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	"math"
 
@@ -12,12 +13,14 @@ import (
 )
 
 type Candidate struct {
-	BytesBefore int64
-	BytesAfter  int64
-	PSNR        float64
-	SSIM        float64
-	HasPSNR     bool
-	HasSSIM     bool
+	BytesBefore  int64
+	BytesAfter   int64
+	PSNR         float64
+	PSNRAlpha    float64
+	HasPSNRAlpha bool
+	SSIM         float64
+	HasPSNR      bool
+	HasSSIM      bool
 }
 
 type CandidatePolicy struct {
@@ -56,10 +59,10 @@ func EvaluateWebPCandidate(source image.Image, bytesBefore int64, options *webp.
 	candidate := Candidate{
 		BytesBefore: bytesBefore,
 		BytesAfter:  int64(encoded.Len()),
-		PSNR:        comparison.PSNR,
-		SSIM:        comparison.SSIM,
-		HasPSNR:     true,
-		HasSSIM:     true,
+		PSNR:        comparison.PSNR, PSNRAlpha: comparison.PSNRAlpha, HasPSNRAlpha: true,
+		SSIM:    comparison.SSIM,
+		HasPSNR: true,
+		HasSSIM: true,
 	}
 	return EvaluatedCandidate{
 		Encoded:   append([]byte(nil), encoded.Bytes()...),
@@ -72,7 +75,16 @@ func EvaluateWebPCandidate(source image.Image, bytesBefore int64, options *webp.
 // converters and scan recommendations.
 func EvaluateCandidate(c Candidate, p CandidatePolicy) Verdict {
 	v := Verdict{Accept: true, Gain: gain(c.BytesBefore, c.BytesAfter)}
+	if err := p.Validate(); err != nil {
+		return Verdict{Code: "invalid_threshold", Gain: v.Gain}
+	}
+	if p.MinPSNR > 0 && (!c.HasPSNR || math.IsNaN(c.PSNR) || math.IsInf(c.PSNR, -1)) || p.MinSSIM > 0 && (!c.HasSSIM || math.IsNaN(c.SSIM) || math.IsInf(c.SSIM, 0)) {
+		return Verdict{Code: "fidelity_unavailable", Gain: v.Gain}
+	}
 	if p.MinPSNR > 0 && c.HasPSNR && !math.IsInf(c.PSNR, 1) && c.PSNR < p.MinPSNR {
+		return Verdict{Code: "fidelity_below_minimum", Gain: v.Gain}
+	}
+	if p.MinPSNR > 0 && c.HasPSNRAlpha && (math.IsNaN(c.PSNRAlpha) || c.PSNRAlpha < p.MinPSNR) {
 		return Verdict{Code: "fidelity_below_minimum", Gain: v.Gain}
 	}
 	if p.MinSSIM > 0 && c.HasSSIM && c.SSIM < p.MinSSIM {
@@ -82,4 +94,17 @@ func EvaluateCandidate(c Candidate, p CandidatePolicy) Verdict {
 		return Verdict{Code: "gain_below_minimum", Gain: v.Gain}
 	}
 	return v
+}
+
+// Validate rejects values whose comparisons would silently bypass policy.
+func (p CandidatePolicy) Validate() error {
+	for _, v := range []float64{p.MinGain, p.MinPSNR, p.MinSSIM} {
+		if math.IsNaN(v) || math.IsInf(v, 0) || v < 0 {
+			return fmt.Errorf("thresholds must be finite and non-negative")
+		}
+	}
+	if p.MinGain > 100 || p.MinSSIM > 1 {
+		return fmt.Errorf("min-gain cannot exceed 100 and min-ssim cannot exceed 1")
+	}
+	return nil
 }

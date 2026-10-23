@@ -9,8 +9,8 @@ import (
 
 	"github.com/keshon/pixelita/internal/imgio"
 	"github.com/keshon/pixelita/internal/metric"
-	"github.com/keshon/pixelita/internal/report"
 	"github.com/keshon/pixelita/internal/resize"
+	"github.com/keshon/pixelita/internal/result"
 )
 
 type DiffOptions struct {
@@ -26,8 +26,8 @@ type DiffOptions struct {
 func DefaultDiff() DiffOptions { return DiffOptions{Amplify: 8} }
 
 // Diff measures how far b is from a.
-func Diff(a, b string, o DiffOptions) report.Item {
-	item := report.Item{Path: a, Output: b, Metrics: map[string]any{}}
+func Diff(a, b string, o DiffOptions) result.Item {
+	item := result.Item{Path: a, Output: b, Metrics: map[string]any{}}
 
 	imgA, _, rawA, err := imgio.Load(a)
 	if err != nil {
@@ -95,6 +95,7 @@ func Diff(a, b string, o DiffOptions) report.Item {
 		item.Metrics["psnr"] = res.PSNR
 		item.Metrics["psnrAlpha"] = res.PSNRAlpha
 	}
+	item.Verification = &result.Verification{Status: "measured", Method: "decode+psnr+alpha+ssim"}
 	item.Metrics["ssim"] = res.SSIM
 	item.Metrics["maxDelta"] = res.MaxDelta
 	item.Metrics["p95"] = res.P95
@@ -109,14 +110,14 @@ func Diff(a, b string, o DiffOptions) report.Item {
 	}
 
 	switch {
-	case o.MinPSNR > 0 && res.PSNR < o.MinPSNR:
-		item.Status = report.StatusFailed
+	case o.MinPSNR > 0 && (res.PSNR < o.MinPSNR || res.PSNRAlpha < o.MinPSNR):
+		item.Status = result.StatusFailed
 		item.Reason = fmt.Sprintf("below %.0f dB", o.MinPSNR)
 	case o.MinSSIM > 0 && res.SSIM < o.MinSSIM:
-		item.Status = report.StatusFailed
+		item.Status = result.StatusFailed
 		item.Reason = fmt.Sprintf("below %.3f ssim", o.MinSSIM)
 	default:
-		item.Status = report.StatusDone
+		item.Status = result.StatusDone
 	}
 	return item
 }

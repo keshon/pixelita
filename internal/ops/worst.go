@@ -8,8 +8,8 @@ import (
 
 	"github.com/keshon/pixelita/internal/imgio"
 	"github.com/keshon/pixelita/internal/metric"
-	"github.com/keshon/pixelita/internal/report"
 	"github.com/keshon/pixelita/internal/resize"
+	"github.com/keshon/pixelita/internal/result"
 )
 
 // This file is about sets of regions rather than one region at a time.
@@ -34,27 +34,28 @@ import (
 
 // RegionMeasure is everything reported about one rectangle.
 type RegionMeasure struct {
-	Rect   image.Rectangle
-	PSNR   float64
-	SSIM   float64
-	Worst  int
-	P95    int
-	P99    int
-	Before [3]int // tonal levels in the first image
-	Levels [3]int // and in the second
+	Rect      image.Rectangle
+	PSNRAlpha float64
+	PSNR      float64
+	SSIM      float64
+	Worst     int
+	P95       int
+	P99       int
+	Before    [3]int // tonal levels in the first image
+	Levels    [3]int // and in the second
 }
 
 // MeasureRegions measures every rectangle in one pass over the two files.
-func MeasureRegions(a, b string, rects []image.Rectangle, wantLevels bool) ([]report.Item, error) {
+func MeasureRegions(a, b string, rects []image.Rectangle, wantLevels bool) ([]result.Item, error) {
 	x, y, err := loadPair(a, b)
 	if err != nil {
 		return nil, err
 	}
-	items := make([]report.Item, 0, len(rects))
+	items := make([]result.Item, 0, len(rects))
 	for _, r := range rects {
 		m, err := measureRegion(x, y, r, wantLevels)
 		if err != nil {
-			item := report.Item{Path: a, Output: b,
+			item := result.Item{Path: a, Output: b,
 				Metrics: map[string]any{"crop": Rect(r)}}
 			items = append(items, fail(item, err, "region error"))
 			continue
@@ -78,7 +79,7 @@ func MeasureRegions(a, b string, rects []image.Rectangle, wantLevels bool) ([]re
 // PSNR was unremarkable while its SSIM had fallen from 0.96 to 0.86 — the
 // texture in the shadows had gone, and only SSIM said so. PSNR is reported
 // beside it, so a region merely shifted in level still stands out.
-func WorstRegions(a, b string, n, tile int, by Ranking, wantLevels bool) ([]report.Item, error) {
+func WorstRegions(a, b string, n, tile int, by Ranking, wantLevels bool) ([]result.Item, error) {
 	// Ranking by headroom needs the counts whether or not they are reported.
 	return rank(a, b, n, tile, wantLevels || by == RankLevels, func(m RegionMeasure) float64 {
 		switch by {
@@ -126,7 +127,7 @@ const (
 )
 
 func rank(a, b string, n, tile int, wantLevels bool,
-	score func(RegionMeasure) float64) ([]report.Item, error) {
+	score func(RegionMeasure) float64) ([]result.Item, error) {
 
 	x, y, err := loadPair(a, b)
 	if err != nil {
@@ -166,7 +167,7 @@ func rank(a, b string, n, tile int, wantLevels bool,
 		n = min(len(all), 5)
 	}
 
-	items := make([]report.Item, 0, n)
+	items := make([]result.Item, 0, n)
 	for _, e := range all[:n] {
 		items = append(items, regionItem(a, b, e.m, wantLevels))
 	}
@@ -204,7 +205,7 @@ func measureRegion(x, y *image.NRGBA, r image.Rectangle, wantLevels bool) (Regio
 	if err != nil {
 		return RegionMeasure{}, err
 	}
-	m := RegionMeasure{Rect: r, PSNR: res.PSNR, SSIM: res.SSIM,
+	m := RegionMeasure{Rect: r, PSNR: res.PSNR, PSNRAlpha: res.PSNRAlpha, SSIM: res.SSIM,
 		Worst: res.MaxDelta, P95: res.P95, P99: res.P99}
 	// Tonal levels travel with the fidelity figures because they always end up
 	// in the same table. Fetching them from a second binary for the same
@@ -215,13 +216,16 @@ func measureRegion(x, y *image.NRGBA, r image.Rectangle, wantLevels bool) (Regio
 	return m, nil
 }
 
-func regionItem(a, b string, m RegionMeasure, wantLevels bool) report.Item {
-	item := report.Item{Path: a, Output: b, Status: report.StatusDone,
+func regionItem(a, b string, m RegionMeasure, wantLevels bool) result.Item {
+	item := result.Item{Path: a, Output: b, Status: result.StatusDone,
 		Metrics: map[string]any{}}
 	// Spelled the way -crop reads it, so the next command is a paste rather
 	// than a transcription.
 	item.Metrics["crop"] = Rect(m.Rect)
 	item.Metrics["ssim"] = m.SSIM
+	if !math.IsInf(m.PSNRAlpha, 1) {
+		item.Metrics["psnrAlpha"] = m.PSNRAlpha
+	}
 	item.Metrics["maxDelta"] = float64(m.Worst)
 	item.Metrics["p95"] = m.P95
 	item.Metrics["p99"] = m.P99

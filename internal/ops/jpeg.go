@@ -1,13 +1,15 @@
 package ops
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/keshon/pixelita/internal/imgio"
 	"github.com/keshon/pixelita/internal/jpegopt"
-	"github.com/keshon/pixelita/internal/report"
+	"github.com/keshon/pixelita/internal/result"
 )
 
 type JPEGOptions struct {
@@ -38,8 +40,8 @@ func (o JPEGOptions) OutputPath(path string) string {
 }
 
 // JPEG rewrites a JPEG with Huffman tables fitted to its own contents.
-func JPEG(path string, o JPEGOptions) report.Item {
-	item := report.Item{Path: path, Metrics: map[string]any{}}
+func JPEG(path string, o JPEGOptions) result.Item {
+	item := result.Item{Path: path, Metrics: map[string]any{}}
 
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -55,6 +57,9 @@ func JPEG(path string, o JPEGOptions) report.Item {
 		return fail(item, err, "not readable as baseline jpeg")
 	}
 
+	if err := verifyJPEGIdentity(raw, out); err != nil {
+		return failCode(item, err, "verification_failed", "pixel identity verification failed")
+	}
 	item.BytesAfter = int64(len(out))
 	item.GainPercent = gain(item.BytesBefore, item.BytesAfter)
 	item.Metrics["lossless"] = true
@@ -63,20 +68,37 @@ func JPEG(path string, o JPEGOptions) report.Item {
 		return skip(item, "gain_below_minimum", "gain "+percent(item.GainPercent))
 	}
 
+	item.Verification = &result.Verification{Status: "verified", Method: "decode+pixel-identity"}
 	item.Output = o.OutputPath(path)
 	if o.Output != "" {
 		item.Output = o.Output
 	}
 	if o.DryRun {
-		item.Status = report.StatusWould
+		item.Status = result.StatusWould
 		return item
 	}
-	if err := AtomicWrite(item.Output, out, o.Overwrite || o.Replace, func(data []byte) error {
-		_, _, err := imgio.Decode(data)
-		return err
-	}); err != nil {
+	if err := AtomicWrite(item.Output, out, o.Overwrite || o.Replace, func(data []byte) error { return verifyJPEGIdentity(raw, data) }); err != nil {
 		return failCode(item, err, "write_failed", "write error")
 	}
-	item.Status = report.StatusDone
+
+	item.Verification = &result.Verification{Status: "verified", Method: "decode+pixel-identity"}
+	item.Written = true
+	item.Status = result.StatusDone
 	return item
+}
+
+func verifyJPEGIdentity(raw, data []byte) error {
+	before, _, err := imgio.Decode(raw)
+	if err != nil {
+		return err
+	}
+	after, _, err := imgio.Decode(data)
+	if err != nil {
+		return err
+	}
+	a, b := imgio.ToNRGBA(before), imgio.ToNRGBA(after)
+	if a.Rect != b.Rect || !bytes.Equal(a.Pix, b.Pix) {
+		return fmt.Errorf("JPEG optimization changed decoded pixels")
+	}
+	return nil
 }

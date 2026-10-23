@@ -16,14 +16,17 @@ import (
 	"strings"
 
 	"github.com/keshon/pixelita/internal/cli"
-	"github.com/keshon/pixelita/internal/imgio"
+	"github.com/keshon/pixelita/internal/engine"
 	"github.com/keshon/pixelita/internal/ops"
 	"github.com/keshon/pixelita/internal/report"
 )
 
 func main() {
+	ctx, cancel := cli.WorkContext()
+	defer cancel()
 	cli.ConfigureDefaultFlags()
 	opt := ops.DefaultScan()
+	flag.Float64Var(&opt.MinSSIM, "min-ssim", 0, "minimum SSIM, 0 disables")
 	var verbose, asJSON bool
 	var widthSpec string
 	var showVersion bool
@@ -48,7 +51,7 @@ func main() {
 			"each of them, so the cost of serving a size is a fact rather than a guess. "+
 			"empty turns the check off")
 	flag.BoolVar(&asJSON, "json", false, "emit the report as JSON")
-	flag.IntVar(&jobs, "jobs", 0, "parallel workers, 0 means one per CPU core")
+	flag.IntVar(&jobs, "jobs", 0, "parallel workers, 0 means at most two workers")
 	flag.StringVar(&listFile, "from-file", "", "read paths from a file, one per line")
 
 	flag.Usage = func() {
@@ -61,6 +64,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  img-scan -json ./public/img > report.json\n")
 	}
 	cli.ParseDefaultFlags("img-scan")
+	if err := (ops.CandidatePolicy{MinGain: opt.MinGain, MinPSNR: opt.MinPSNR, MinSSIM: opt.MinSSIM}).Validate(); err != nil {
+		cli.ExitArgument("img-scan", "invalid_threshold", err, nil)
+	}
 
 	opt.DisplayWidths = nil
 	for _, f := range strings.Split(widthSpec, ",") {
@@ -92,19 +98,11 @@ func main() {
 		cli.ExitArgument("img-scan", "invalid_threshold", fmt.Errorf("-min-gain and -min-psnr cannot be negative"), nil)
 	}
 
-	files, err := cli.Roots(flag.Args(), listFile, imgio.Extensions...)
-	if err != nil {
-		cli.ExitInputArgument("img-scan", err)
+	rep, runErr := engine.Scan(engine.BatchRequest{Context: ctx, Paths: flag.Args(), FromFile: listFile, Jobs: jobs}, opt)
+	if runErr != nil {
+		cli.ExitArgument("img-scan", engine.ErrorCode(runErr), runErr, nil)
 	}
-
-	rep := report.New("img-scan", "improved", true)
-	items := make([]report.Item, len(files))
-	cli.Each(len(files), jobs, func(i int) { items[i] = ops.Scan(files[i], opt) })
-	for _, it := range items {
-		rep.Add(it)
-	}
-	ops.ScanSummary(rep, opt)
-	os.Exit(rep.Emit(os.Stdout, columns, asJSON, verbose))
+	os.Exit(report.Emit(rep, os.Stdout, columns, asJSON, verbose))
 }
 
 var columns = []report.Column{

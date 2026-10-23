@@ -3,7 +3,6 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -11,13 +10,15 @@ import (
 	"strings"
 
 	"github.com/keshon/pixelita/internal/cli"
-	"github.com/keshon/pixelita/internal/imgio"
+	"github.com/keshon/pixelita/internal/engine"
 	"github.com/keshon/pixelita/internal/ops"
 	"github.com/keshon/pixelita/internal/report"
 	"github.com/keshon/pixelita/internal/resize"
 )
 
 func main() {
+	ctx, cancel := cli.WorkContext()
+	defer cancel()
 	cli.ConfigureDefaultFlags()
 	opt := ops.DefaultResize()
 	var filterName, widths, listFile string
@@ -35,7 +36,7 @@ func main() {
 	flag.StringVar(&filterName, "filter", resize.CatmullRom.Name,
 		"resampling filter: "+strings.Join(resize.FilterNames(), ", "))
 	flag.BoolVar(&opt.AllowUpscale, "allow-upscale", false, "permit making an image larger")
-	flag.StringVar(&opt.Format, "format", opt.Format, "output format: keep, png or jpeg")
+	flag.StringVar(&opt.Format, "format", opt.Format, "output format: keep, png, jpeg or webp")
 	flag.IntVar(&opt.JPEGQuality, "jpeg-quality", opt.JPEGQuality, "quality for JPEG output, 1..100")
 	flag.StringVar(&opt.OutDir, "out-dir", "", "write results here instead of next to the source")
 	flag.StringVar(&opt.Suffix, "suffix", "", "suffix for the output name, default is the size")
@@ -45,7 +46,7 @@ func main() {
 	flag.BoolVar(&verbose, "v", false, "list skipped files too")
 	flag.BoolVar(&showVersion, "version", false, "print which build this is and exit")
 	flag.BoolVar(&asJSON, "json", false, "emit the report as JSON")
-	flag.IntVar(&jobs, "jobs", 0, "parallel workers, 0 means one per CPU core")
+	flag.IntVar(&jobs, "jobs", 0, "parallel workers, 0 means at most two workers")
 	flag.StringVar(&listFile, "from-file", "", "read paths from a file, one per line")
 
 	flag.Usage = func() {
@@ -83,7 +84,7 @@ func main() {
 	if opt.Fit != "inside" && opt.Fit != "outside" && opt.Fit != "cover" && opt.Fit != "exact" {
 		cli.ExitArgument("img-resize", "invalid_option", fmt.Errorf("-fit must be inside, outside, cover or exact"), nil)
 	}
-	if opt.Format != "keep" && opt.Format != "png" && opt.Format != "jpeg" {
+	if opt.Format != "keep" && opt.Format != "png" && opt.Format != "jpeg" && opt.Format != "webp" {
 		cli.ExitArgument("img-resize", "invalid_option", fmt.Errorf("-format must be keep, png or jpeg"), nil)
 	}
 	selectors := 0
@@ -104,36 +105,11 @@ func main() {
 		cli.ExitArgument("img-resize", "conflicting_options", fmt.Errorf("choose only one sizing mode: box, maximum bounds, scale or widths"), nil)
 	}
 
-	files, err := cli.Roots(flag.Args(), listFile, imgio.Extensions...)
-	if err != nil {
-		cli.ExitInputArgument("img-resize", err)
+	rep, runErr := engine.Resize(engine.BatchRequest{Context: ctx, Paths: flag.Args(), FromFile: listFile, Jobs: jobs}, opt)
+	if runErr != nil {
+		cli.ExitArgument("img-resize", engine.ErrorCode(runErr), runErr, nil)
 	}
-	var planned []ops.Destination
-	for _, path := range files {
-		dests, err := ops.PlanResizeDestinations(path, opt)
-		if err != nil {
-			cli.ExitArgument("img-resize", "invalid_destination", err, nil)
-		}
-		planned = append(planned, dests...)
-	}
-	if err := ops.PreflightDestinations(planned, opt.Overwrite, opt.Replace); err != nil {
-		var pe *ops.PlanError
-		code := "invalid_destination"
-		if errors.As(err, &pe) {
-			code = pe.Code
-		}
-		cli.ExitArgument("img-resize", code, err, nil)
-	}
-
-	rep := report.New("img-resize", "resized", opt.DryRun)
-	results := make([][]report.Item, len(files))
-	cli.Each(len(files), jobs, func(i int) { results[i] = ops.Resize(files[i], opt) })
-	for _, items := range results {
-		for _, it := range items {
-			rep.Add(it)
-		}
-	}
-	os.Exit(rep.Emit(os.Stdout, columns, asJSON, verbose))
+	os.Exit(report.Emit(rep, os.Stdout, columns, asJSON, verbose))
 }
 
 func parseWidths(s string) ([]int, error) {

@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"bytes"
 	"fmt"
 	"math"
 	"os"
@@ -9,7 +10,7 @@ import (
 	webp "github.com/mayahiro/go-webp"
 
 	"github.com/keshon/pixelita/internal/imgio"
-	"github.com/keshon/pixelita/internal/report"
+	"github.com/keshon/pixelita/internal/result"
 )
 
 type WebPOptions struct {
@@ -80,8 +81,8 @@ func WebPBytes(path string, o WebPOptions) ([]byte, int64, string, error) {
 }
 
 // WebP converts an image to WebP, and writes it only when that pays off.
-func WebP(path string, o WebPOptions) report.Item {
-	item := report.Item{Path: path, Metrics: map[string]any{}}
+func WebP(path string, o WebPOptions) result.Item {
+	item := result.Item{Path: path, Metrics: map[string]any{}}
 
 	source, err := os.ReadFile(path)
 	if err != nil {
@@ -104,6 +105,9 @@ func WebP(path string, o WebPOptions) report.Item {
 	if err != nil {
 		return fail(item, err, "bad options")
 	}
+	if err := imgio.ReencodeRestriction(source); err != nil {
+		return skip(item, "unsupported_metadata", err.Error())
+	}
 	img, _, err := imgio.Decode(source)
 	if err != nil {
 		return fail(item, err, "decode error")
@@ -119,7 +123,11 @@ func WebP(path string, o WebPOptions) report.Item {
 	if !math.IsInf(evaluated.Candidate.PSNR, 1) {
 		item.Metrics["psnr"] = evaluated.Candidate.PSNR
 	}
+	item.Verification = &result.Verification{Status: "measured", Method: "decode+psnr+alpha+ssim"}
 	item.Metrics["ssim"] = evaluated.Candidate.SSIM
+	if !math.IsInf(evaluated.Candidate.PSNRAlpha, 1) {
+		item.Metrics["psnrAlpha"] = evaluated.Candidate.PSNRAlpha
+	}
 	if evaluated.Verdict.Code == "fidelity_below_minimum" {
 		return skip(item, evaluated.Verdict.Code, "candidate below fidelity threshold")
 	}
@@ -127,12 +135,15 @@ func WebP(path string, o WebPOptions) report.Item {
 		return skip(item, "gain_below_minimum", "gain "+percent(item.GainPercent))
 	}
 
+	if !evaluated.Verdict.Accept {
+		return skip(item, evaluated.Verdict.Code, "candidate rejected by policy")
+	}
 	item.Output = o.OutputPath(path)
 	if o.Output != "" {
 		item.Output = o.Output
 	}
 	if o.DryRun {
-		item.Status = report.StatusWould
+		item.Status = result.StatusWould
 		return item
 	}
 	if err := AtomicWrite(item.Output, evaluated.Encoded, o.Overwrite, func(data []byte) error {
@@ -141,8 +152,13 @@ func WebP(path string, o WebPOptions) report.Item {
 	}); err != nil {
 		return failCode(item, err, "write_failed", "write error")
 	}
-	item.Status = report.StatusDone
+	item.Written = true
+	item.Status = result.StatusDone
 	if o.DeleteSource {
+		current, err := os.ReadFile(path)
+		if err != nil || !bytes.Equal(current, source) {
+			return failCode(item, fmt.Errorf("source changed during conversion; source retained"), "source_changed", "destination written; source retained")
+		}
 		if err := os.Remove(path); err != nil {
 			return failCode(item, err, "source_delete_failed", "destination written; source kept")
 		}

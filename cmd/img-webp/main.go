@@ -9,17 +9,19 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"os"
 
 	"github.com/keshon/pixelita/internal/cli"
+	"github.com/keshon/pixelita/internal/engine"
 	"github.com/keshon/pixelita/internal/ops"
 	"github.com/keshon/pixelita/internal/report"
 )
 
 func main() {
+	ctx, cancel := cli.WorkContext()
+	defer cancel()
 	cli.ConfigureDefaultFlags()
 	opt := ops.DefaultWebP()
 	var verbose, asJSON bool
@@ -48,7 +50,7 @@ func main() {
 		"write results here instead of next to the source")
 	flag.BoolVar(&showVersion, "version", false, "print which build this is and exit")
 	flag.BoolVar(&asJSON, "json", false, "emit the report as JSON")
-	flag.IntVar(&jobs, "jobs", 0, "parallel encoders, 0 means one per CPU core")
+	flag.IntVar(&jobs, "jobs", 0, "parallel encoders, 0 means at most two workers")
 	flag.StringVar(&listFile, "from-file", "",
 		"read paths from a file, one per line, instead of or in addition to arguments")
 
@@ -62,6 +64,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  img-webp -mode near-lossless -skip-palette=false ./ui-shots\n")
 	}
 	cli.ParseDefaultFlags("img-webp")
+	if err := (ops.CandidatePolicy{MinGain: opt.MinGain, MinPSNR: opt.MinPSNR, MinSSIM: opt.MinSSIM}).Validate(); err != nil {
+		cli.ExitArgument("img-webp", "invalid_threshold", err, nil)
+	}
 
 	if showVersion {
 		cli.Version(os.Stdout, "img-webp")
@@ -82,30 +87,11 @@ func main() {
 		cli.ExitArgument("img-webp", "negative_retention_rejected", fmt.Errorf("-keep-original=false is unsafe; use explicit -delete-source"), next)
 	}
 
-	files, err := cli.Roots(flag.Args(), listFile, ".png", ".jpg", ".jpeg")
-	if err != nil {
-		cli.ExitInputArgument("img-webp", err)
+	rep, runErr := engine.WebP(engine.BatchRequest{Context: ctx, Paths: flag.Args(), FromFile: listFile, Jobs: jobs}, opt)
+	if runErr != nil {
+		cli.ExitArgument("img-webp", engine.ErrorCode(runErr), runErr, nil)
 	}
-	planned := make([]ops.Destination, 0, len(files))
-	for _, path := range files {
-		planned = append(planned, ops.Destination{Source: path, Output: opt.OutputPath(path)})
-	}
-	if err := ops.PreflightDestinations(planned, opt.Overwrite, false); err != nil {
-		var pe *ops.PlanError
-		code := "invalid_destination"
-		if errors.As(err, &pe) {
-			code = pe.Code
-		}
-		cli.ExitArgument("img-webp", code, err, nil)
-	}
-
-	rep := report.New("img-webp", "converted", opt.DryRun)
-	items := make([]report.Item, len(files))
-	cli.Each(len(files), jobs, func(i int) { items[i] = ops.WebP(files[i], opt) })
-	for _, it := range items {
-		rep.Add(it)
-	}
-	os.Exit(rep.Emit(os.Stdout, columns, asJSON, verbose))
+	os.Exit(report.Emit(rep, os.Stdout, columns, asJSON, verbose))
 }
 
 var columns = []report.Column{

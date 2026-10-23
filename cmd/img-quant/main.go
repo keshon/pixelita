@@ -6,17 +6,19 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"os"
 
 	"github.com/keshon/pixelita/internal/cli"
+	"github.com/keshon/pixelita/internal/engine"
 	"github.com/keshon/pixelita/internal/ops"
 	"github.com/keshon/pixelita/internal/report"
 )
 
 func main() {
+	ctx, cancel := cli.WorkContext()
+	defer cancel()
 	cli.ConfigureDefaultFlags()
 	opt := ops.DefaultQuant()
 	var verbose, asJSON bool
@@ -30,6 +32,7 @@ func main() {
 	flag.IntVar(&opt.Effort, "effort", opt.Effort, "1..10, how long to spend refining the palette")
 	flag.Float64Var(&opt.MinGain, "min-gain", opt.MinGain,
 		"minimum size reduction in percent, below that the original is kept")
+	flag.Float64Var(&opt.MinSSIM, "min-ssim", 0, "minimum SSIM, 0 disables")
 	flag.Float64Var(&opt.MinPSNR, "min-psnr", opt.MinPSNR,
 		"refuse to write below this fidelity in dB, 0 disables the check")
 	flag.BoolVar(&opt.DryRun, "dry-run", false, "measure and report, write nothing")
@@ -41,7 +44,7 @@ func main() {
 	flag.BoolVar(&verbose, "v", false, "list skipped files too")
 	flag.BoolVar(&showVersion, "version", false, "print which build this is and exit")
 	flag.BoolVar(&asJSON, "json", false, "emit the report as JSON")
-	flag.IntVar(&jobs, "jobs", 0, "parallel workers, 0 means one per CPU core")
+	flag.IntVar(&jobs, "jobs", 0, "parallel workers, 0 means at most two workers")
 	flag.StringVar(&listFile, "from-file", "",
 		"read paths from a file, one per line, instead of or in addition to arguments")
 
@@ -55,6 +58,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  img-quant -json -dry-run ./public/img\n")
 	}
 	cli.ParseDefaultFlags("img-quant")
+	if err := (ops.CandidatePolicy{MinGain: opt.MinGain, MinPSNR: opt.MinPSNR, MinSSIM: opt.MinSSIM}).Validate(); err != nil {
+		cli.ExitArgument("img-quant", "invalid_threshold", err, nil)
+	}
 
 	if showVersion {
 		cli.Version(os.Stdout, "img-quant")
@@ -73,30 +79,11 @@ func main() {
 		cli.ExitArgument("img-quant", "invalid_threshold", fmt.Errorf("-min-gain and -min-psnr cannot be negative"), nil)
 	}
 
-	files, err := cli.Roots(flag.Args(), listFile, ".png")
-	if err != nil {
-		cli.ExitInputArgument("img-quant", err)
+	rep, runErr := engine.Quant(engine.BatchRequest{Context: ctx, Paths: flag.Args(), FromFile: listFile, Jobs: jobs}, opt)
+	if runErr != nil {
+		cli.ExitArgument("img-quant", engine.ErrorCode(runErr), runErr, nil)
 	}
-	planned := make([]ops.Destination, 0, len(files))
-	for _, path := range files {
-		planned = append(planned, ops.Destination{Source: path, Output: opt.OutputPath(path)})
-	}
-	if err := ops.PreflightDestinations(planned, opt.Overwrite, opt.Replace); err != nil {
-		var pe *ops.PlanError
-		code := "invalid_destination"
-		if errors.As(err, &pe) {
-			code = pe.Code
-		}
-		cli.ExitArgument("img-quant", code, err, nil)
-	}
-
-	rep := report.New("img-quant", "written", opt.DryRun)
-	items := make([]report.Item, len(files))
-	cli.Each(len(files), jobs, func(i int) { items[i] = ops.Quant(files[i], opt) })
-	for _, it := range items {
-		rep.Add(it)
-	}
-	os.Exit(rep.Emit(os.Stdout, columns, asJSON, verbose))
+	os.Exit(report.Emit(rep, os.Stdout, columns, asJSON, verbose))
 }
 
 var columns = []report.Column{

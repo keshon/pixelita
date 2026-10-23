@@ -60,3 +60,20 @@ func TestPercentilesFollowAWidespreadShift(t *testing.T) {
 		t.Errorf("p99 = %d, want 60", res.P99)
 	}
 }
+
+func TestSmallImagesHaveMeasuredSSIM(t *testing.T) {
+	for _, size := range []image.Point{{1, 1}, {4, 4}, {1, 16}} {
+		a := image.NewNRGBA(image.Rect(0, 0, size.X, size.Y))
+		b := image.NewNRGBA(a.Rect)
+		for y := 0; y < size.Y; y++ {
+			for x := 0; x < size.X; x++ {
+				a.SetNRGBA(x, y, color.NRGBA{A: 255})
+				b.SetNRGBA(x, y, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+			}
+		}
+		r, err := Compare(a, b)
+		if err != nil || r.SSIM > 0.01 {
+			t.Fatalf("unmeasured small image: %+v %v", r, err)
+		}
+	}
+}

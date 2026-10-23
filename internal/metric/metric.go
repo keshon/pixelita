@@ -143,13 +143,10 @@ func ssim(a, b *image.NRGBA) float64 {
 	la, lb := luma(a), luma(b)
 
 	const (
-		win = 8
-		c1  = 0.01 * 0.01 // L = 1 after scaling to 0..1
-		c2  = 0.03 * 0.03
+		c1 = 0.01 * 0.01 // L = 1 after scaling to 0..1
+		c2 = 0.03 * 0.03
 	)
-	if w < win || h < win {
-		return 1
-	}
+	win := min(8, w, h)
 
 	var total float64
 	var count int
@@ -167,7 +164,7 @@ func ssim(a, b *image.NRGBA) float64 {
 					sab += va * vb
 				}
 			}
-			const n = win * win
+			n := float64(win * win)
 			ma, mb := sa/n, sb/n
 			va := saa/n - ma*ma
 			vb := sbb/n - mb*mb

@@ -1,18 +1,21 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"image"
 	"image/color"
 	"image/gif"
+	"image/jpeg"
 	"image/png"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
 
+	"github.com/keshon/pixelita/internal/imgio"
 	"github.com/keshon/pixelita/internal/ops"
-	"github.com/keshon/pixelita/internal/report"
+	"github.com/keshon/pixelita/internal/result"
 )
 
 func writePNG(t *testing.T, path string) {
@@ -70,7 +73,7 @@ func TestPlanOrderingAndApplyEquivalence(t *testing.T) {
 		if pr.Items[i].Output != ar.Items[i].Output || pr.Items[i].Str("strategy") != ar.Items[i].Str("strategy") {
 			t.Fatalf("plan/apply differ: %#v %#v", pr.Items[i], ar.Items[i])
 		}
-		if pr.Items[i].Status != report.StatusWould || ar.Items[i].Status != report.StatusDone {
+		if pr.Items[i].Status != result.StatusWould || ar.Items[i].Status != result.StatusDone {
 			t.Fatalf("plan/apply status mismatch: %#v %#v", pr.Items[i], ar.Items[i])
 		}
 	}
@@ -139,7 +142,7 @@ func TestOptimizeReportsUnsupportedAutomaticFormat(t *testing.T) {
 	}
 	rep := ExecuteOptimize(plan)
 	rep.Finish()
-	if len(rep.Items) != 1 || rep.Items[0].Code != "no_automatic_strategy" || rep.Items[0].Status != report.StatusSkipped {
+	if len(rep.Items) != 1 || rep.Items[0].Code != "no_automatic_strategy" || rep.Items[0].Status != result.StatusSkipped {
 		t.Fatalf("unsupported outcome = %#v", rep.Items)
 	}
 }
@@ -195,5 +198,155 @@ func TestViewUsesBoundedDefaultUnlessMaxIsExplicit(t *testing.T) {
 	}
 	if _, err := View(ViewRequest{Paths: []string{path}, Out: existing, DryRun: true}); err != nil {
 		t.Fatalf("dry-run rejected an existing destination it will not write: %v", err)
+	}
+}
+
+func TestExplicitZeroThresholds(t *testing.T) {
+	z := 0.0
+	req := OptimizeRequest{MinGain: &z, MinPSNR: &z, MinSSIM: &z}
+	a, b, c := 10.0, 30.0, 0.9
+	applyThresholds(&a, &b, &c, req)
+	if a != 0 || b != 0 || c != 0 {
+		t.Fatal("zero did not disable thresholds")
+	}
+	a, b, c = 10, 30, 0.9
+	applyThresholds(&a, &b, &c, OptimizeRequest{})
+	if a != 10 || b != 30 || c != 0.9 {
+		t.Fatal("omitted thresholds replaced defaults")
+	}
+}
+
+func TestOptimizeVariantsAndVerificationWorkflow(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "source.png")
+	writePNG(t, src)
+	out := t.TempDir()
+	plan, err := BuildOptimizePlan(OptimizeRequest{Paths: []string{src}, OutDir: out, Format: "webp", Widths: []int{32}, Apply: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep := ExecuteOptimize(plan)
+	if len(rep.Items) != 1 || rep.Items[0].Status != result.StatusDone {
+		t.Fatalf("variant: %+v", rep.Items)
+	}
+	result := rep.Items[0].Output
+	raw, err := os.ReadFile(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := imgio.ReadHeader(raw)
+	if err != nil || h.Format != "webp" || h.Width != 32 {
+		t.Fatalf("variant header: %+v %v", h, err)
+	}
+	compared, err := Compare(CompareRequest{A: src, B: result, Worst: 2, Tile: 16, Levels: true})
+	if err != nil || len(compared.Items) != 2 {
+		t.Fatalf("compare: %+v %v", compared, err)
+	}
+	if compared.Items[0].Str("resampled") == "" {
+		t.Fatal("regional resampling not disclosed")
+	}
+	_, err = Look(LookRequest{Paths: []string{src, result}, Options: ops.DefaultLook(), Regions: []image.Rectangle{image.Rect(0, 0, 8, 8)}, DryRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+func TestPlanRejectsChangedSource(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "source.png")
+	writePNG(t, src)
+	p, err := BuildOptimizePlan(OptimizeRequest{Paths: []string{src}, Apply: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(src, []byte("changed"), 0600)
+	r := ExecuteOptimize(p)
+	if r.Items[0].Code != "source_changed" {
+		t.Fatalf("stale plan executed: %+v", r.Items)
+	}
+}
+func TestAutoSelectionAndExactPixels(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "source.png")
+	writePNG(t, src)
+	p, err := BuildOptimizePlan(OptimizeRequest{Paths: []string{src}, Format: "auto"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := ExecuteOptimize(p)
+	if len(r.Items) != 1 || len(r.Items[0].Candidates) != 2 {
+		t.Fatalf("missing decisions: %+v", r)
+	}
+	p, err = BuildOptimizePlan(OptimizeRequest{Paths: []string{src}, ExactPixels: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := ExecuteOptimize(p); r.Items[0].Status != result.StatusSkipped {
+		t.Fatal("exact mode quantized a PNG")
+	}
+}
+func TestJPEGVerifiedIdentity(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "source.jpg")
+	img := image.NewNRGBA(image.Rect(0, 0, 64, 64))
+	for y := 0; y < 64; y++ {
+		for x := 0; x < 64; x++ {
+			img.SetNRGBA(x, y, color.NRGBA{uint8(x * 3), uint8(y * 3), 80, 255})
+		}
+	}
+	f, err := os.Create(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = jpeg.Encode(f, img, &jpeg.Options{Quality: 90})
+	f.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	zero := 0.0
+	p, err := BuildOptimizePlan(OptimizeRequest{Paths: []string{src}, Apply: true, ExactPixels: true, MinGain: &zero})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := ExecuteOptimize(p)
+	if r.Items[0].Status != result.StatusDone {
+		t.Fatalf("JPEG: %+v", r.Items)
+	}
+	c, err := Compare(CompareRequest{A: src, B: r.Items[0].Output, MinPSNR: 200})
+	if err != nil || c.Items[0].Status != result.StatusDone {
+		t.Fatalf("JPEG identity: %+v %v", c, err)
+	}
+}
+func TestViewCannotOverwriteInput(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "source.png")
+	writePNG(t, src)
+	_, err := View(ViewRequest{Paths: []string{src}, Out: src, Overwrite: true})
+	if err == nil {
+		t.Fatal("preview may overwrite input")
+	}
+}
+
+func TestCancellationKeepsSourcesAndReportsQueuedFiles(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "source.png")
+	writePNG(t, src)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	o := ops.DefaultQuant()
+	r, err := Quant(BatchRequest{Paths: []string{src}, Context: ctx}, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Items[0].Code != "cancelled" {
+		t.Fatalf("queued work ran: %+v", r.Items)
+	}
+	if _, err := os.Stat(o.OutputPath(src)); !os.IsNotExist(err) {
+		t.Fatal("cancelled operation wrote an output")
+	}
+}
+
+func TestSpecialistExplicitOutputIsPreflighted(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "source.png")
+	writePNG(t, src)
+	o := ops.DefaultQuant()
+	o.Output = src
+	o.Overwrite = true
+	if _, err := Quant(BatchRequest{Paths: []string{src}}, o); err == nil {
+		t.Fatal("explicit output bypassed source protection")
 	}
 }

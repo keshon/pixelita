@@ -1,0 +1,23 @@
+name: check
+on: [push, pull_request]
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      CGO_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test ./...
+      - run: go vet ./...
+      - run: go build -o bin/ ./cmd/...
+      - run: ./bin/pixelita capabilities --json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pixelita-${{ matrix.os }}
+          path: bin/
