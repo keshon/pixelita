@@ -1,0 +1,110 @@
+{
+  "schema": 1,
+  "policy": {
+    "minGain": 10,
+    "minPSNR": 30,
+    "minSSIM": 0.95
+  },
+  "jpegMinGain": 1,
+  "inputCount": 144,
+  "completed": 144,
+  "formats": {
+    "png": {
+      "inputs": 91,
+      "inputBytes": 62621206,
+      "completed": 91,
+      "completedInputBytes": 62621206,
+      "written": 86,
+      "effectiveBytes": 25446998,
+      "status": {
+        "done": 86,
+        "failed": 4,
+        "skipped": 1
+      },
+      "skipCodes": {
+        "gain_below_minimum": 1
+      },
+      "failureReasons": {
+        "metadata preservation unsupported": 4
+      },
+      "referenceAccepted": 90,
+      "referenceCompleted": 91,
+      "referenceFailures": 0,
+      "referenceEffectiveBytes": 25794728,
+      "seconds": {
+        "median": 0.653918799944222,
+        "max": 14.892027099616826,
+        "sum": 87.18377510132268
+      },
+      "peaks": {
+        "median": 76419072,
+        "max": 1437802496
+      },
+      "referenceEncodeSeconds": {
+        "median": 0.46895929984748363,
+        "max": 7.116627600044012,
+        "sum": 57.02880729967728
+      },
+      "referenceVerifySeconds": {
+        "median": 0.15002539986744523,
+        "max": 3.396335699595511,
+        "sum": 20.956297802273184
+      },
+      "referencePeaks": {
+        "median": 34144256,
+        "max": 276791296
+      },
+      "referenceVerifyPeaks": {
+        "median": 44691456,
+        "max": 1358282752
+      }
+    },
+    "jpeg": {
+      "inputs": 53,
+      "inputBytes": 138566531,
+      "completed": 53,
+      "completedInputBytes": 138566531,
+      "written": 33,
+      "effectiveBytes": 135920949,
+      "status": {
+        "skipped": 20,
+        "done": 33
+      },
+      "skipCodes": {
+        "gain_below_minimum": 12,
+        "progressive_jpeg_unsupported": 8
+      },
+      "failureReasons": {},
+      "referenceAccepted": 0,
+      "referenceCompleted": 0,
+      "referenceFailures": 0,
+      "referenceEffectiveBytes": 0,
+      "seconds": {
+        "median": 1.2331562000326812,
+        "max": 4.4692345997318625,
+        "sum": 71.46844109846279
+      },
+      "peaks": {
+        "median": 161189888,
+        "max": 451305472
+      },
+      "referenceEncodeSeconds": null,
+      "referenceVerifySeconds": null,
+      "referencePeaks": null,
+      "referenceVerifyPeaks": null
+    }
+  },
+  "allSourcesUnchanged": true,
+  "writtenOutputsVerified": 119,
+  "metadataExactMatches": 119,
+  "metadataMismatches": 0,
+  "verificationFailures": 0,
+  "limitations": [
+    "One sequential run per image, including a stratified 24-image smoke sample.",
+    "Windows peak working set per child process, not simultaneous batch memory.",
+    "Pixelita includes verification and publication; pngquant encoding excludes comparison.",
+    "Reference acceptance tests pixels and bytes, not metadata equivalence.",
+    "Spot checks are not exhaustive perceptual validation.",
+    "Corpus contains related screenshots; 144 unique files are not 144 independent content classes."
+  ]
+}

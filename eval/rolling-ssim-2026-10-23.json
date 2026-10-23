@@ -1,0 +1,26 @@
+{
+  "comparisons": 210,
+  "exactMetricMatches": 210,
+  "statusMatches": 210,
+  "sourceIntegrity": true,
+  "binarySHA256": "1b3ec925e589df7113219d9c50449e0afd14acbaf4448dcd59978f1d5cddcfd5",
+  "maxPeakBefore": 1358282752,
+  "maxPeakAfter": 499900416,
+  "largestQuantization": {
+    "metricsIdentical": true,
+    "outputBytesIdentical": true,
+    "sourceUnchanged": true,
+    "peakBefore": 1437802496,
+    "peakAfter": 632807424,
+    "secondsBefore": 14.892027099616826,
+    "secondsAfter": 12.040046099573374
+  },
+  "platform": "Windows-11-10.0.26100-SP0",
+  "largestImagePixels": 53588520,
+  "notes": [
+    "Comparison metrics and statuses exactly match the saved baseline.",
+    "Quantization output bytes were SHA256-identical on the largest image.",
+    "One local run per operation; timings are not a controlled speed benchmark.",
+    "Memory is the Windows per-process peak working set; values include decoding."
+  ]
+}

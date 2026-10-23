@@ -36,9 +36,9 @@ and tiny-image metrics.
 ## Remaining acceptance work
 
 The engineering changes do not complete the product-validation phase of the
-agreed plan. Multiple licensed real-world asset collections, broader reference
-comparisons, representative memory/throughput profiling,
-and repeated agent trials with and without the skill have not been run. No external service
+agreed plan. Multiple independent real-world asset collections, broader codec
+comparisons, controlled repeated throughput profiling,
+and agent trials with and without the skill remain outstanding. No external service
 or model runner was configured for those trials. No market or usability advantage
 is claimed from synthetic acceptance results.
 
@@ -59,6 +59,23 @@ advantage. Source hashes remained unchanged. Raw reports and reproduction
 commands are in eval/. Preparing this comparison exposed and fixed independent
 RGB/alpha metric serialization: alpha-only damage is now reported even when RGB
 is identical, and invisible RGB changes no longer serialize infinite alpha PSNR.
+
+The first private real-world corpus completed all 144 files, after a stratified
+24-file smoke sample. All originals remained unchanged. All 119 written outputs
+passed independent fidelity verification and exact ancillary metadata checks.
+Four iDOT PNGs were refused, 13 files missed the gain floor, and eight progressive
+JPEGs were skipped. Aggregate savings were 59.36% for PNG and 1.91% for JPEG,
+counting retained originals. Private images, filenames, and detailed reports stay
+outside Git; eval/ contains only the reusable harness and anonymized aggregates.
+Visual spot checks found dithering at 3x zoom in accepted photographic regions.
+
+The corpus exposed full-frame SSIM luma buffers as a memory cost. Rolling row
+buffers replaced them without changing operation order inside each window.
+All 210 saved comparisons replayed with exactly identical metrics and statuses;
+peak comparison memory fell from 1,358,282,752 to 499,900,416 bytes on this run.
+Tests compare against the former full-frame implementation across small and
+overlapping window sizes. The allocation benchmark confirms buffer size no longer
+grows with image height. This does not remove the decoded-image memory cost.
 
 ## Deliberate limitations
 

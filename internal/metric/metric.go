@@ -140,21 +140,29 @@ func alphaAware(a, b []uint8) float64 {
 // standard 8x8 sliding window.
 func ssim(a, b *image.NRGBA) float64 {
 	w, h := a.Rect.Dx(), a.Rect.Dy()
-	la, lb := luma(a), luma(b)
 
 	const (
 		c1 = 0.01 * 0.01 // L = 1 after scaling to 0..1
 		c2 = 0.03 * 0.03
 	)
 	win := min(8, w, h)
+	// Only the current window's rows are needed. Full-frame float64 buffers
+	// added 16 bytes per pixel (858 MB for a 53.6 MP corpus image).
+	la, lb := make([]float64, win*w), make([]float64, win*w)
+	loaded := 0
 
 	var total float64
 	var count int
 	for y := 0; y+win <= h; y += 4 {
+		for ; loaded < y+win; loaded++ {
+			row := (loaded % win) * w
+			lumaRow(a, loaded, la[row:row+w])
+			lumaRow(b, loaded, lb[row:row+w])
+		}
 		for x := 0; x+win <= w; x += 4 {
 			var sa, sb, saa, sbb, sab float64
 			for j := 0; j < win; j++ {
-				row := (y+j)*w + x
+				row := ((y+j)%win)*w + x
 				for i := 0; i < win; i++ {
 					va, vb := la[row+i], lb[row+i]
 					sa += va
@@ -180,16 +188,16 @@ func ssim(a, b *image.NRGBA) float64 {
 	return total / float64(count)
 }
 
-// luma flattens to perceptual brightness over white, so that a difference in
+// lumaRow flattens to perceptual brightness over white, so that a difference in
 // transparency registers as a difference in the picture.
-func luma(img *image.NRGBA) []float64 {
-	out := make([]float64, img.Rect.Dx()*img.Rect.Dy())
-	for i, j := 0, 0; i < len(img.Pix); i, j = i+4, j+1 {
+func lumaRow(img *image.NRGBA, y int, out []float64) {
+	start := img.PixOffset(img.Rect.Min.X, img.Rect.Min.Y+y)
+	for j := range out {
+		i := start + j*4
 		a := float64(img.Pix[i+3]) / 255
 		r := float64(img.Pix[i])/255*a + (1 - a)
 		g := float64(img.Pix[i+1])/255*a + (1 - a)
 		b := float64(img.Pix[i+2])/255*a + (1 - a)
 		out[j] = 0.2126*r + 0.7152*g + 0.0722*b
 	}
-	return out
 }

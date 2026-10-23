@@ -19,6 +19,69 @@ This is deterministic acceptance, not an agent usability trial or a representati
 compression benchmark. Timings include process startup and describe one local
 run. No broad performance claim is made.
 
+## Private real-world corpus
+
+Keep the corpus and output directory outside the checkout. The harness stores
+source paths, hashes, detailed reports, and generated images in that directory.
+Only the aggregate summary is suitable for committing.
+
+```powershell
+python eval/corpus_check.py E:/your/images "$env:TEMP/pixelita-corpus" --sample 24
+python eval/corpus_check.py E:/your/images "$env:TEMP/pixelita-corpus"
+python eval/corpus_summary.py "$env:TEMP/pixelita-corpus" --out summary.json
+```
+
+Sampling rotates through format, alpha, profile, and pixel-count strata. The
+full run resumes completed records, requires unchanged executable hashes and
+policy, and writes every input to its own output directory. PNGs use the same
+floors as compare_png.py. JPEGs use 1% gain and independent pixel-identity
+verification at 200 dB. Failed or unsupported inputs are recorded without
+stopping the remaining corpus. A timeout kills that child after five minutes.
+The summary fails on source changes, metadata mismatches, or failed output
+verification. Check `completed == inputCount` before treating it as a full run.
+
+Metadata verification compares PNG ancillary chunks except palette/transparency
+encoding chunks, and JPEG APP/COM segments before the first scan, byte for byte.
+The Windows harness reads the OS peak working set for each child process. Other
+platforms report null memory values. Comparison memory is recorded separately
+from pngquant encoding memory; neither is an entire batch's simultaneous peak.
+
+The first private corpus contained 144 unique files (91 PNG and 53 JPEG),
+including related screenshots, photographs, logos, gradients, and artwork.
+`private-corpus-aggregate-2026-10-23.json` contains only aggregate results, with
+no source names, paths, or image hashes. Pixelita wrote 86 PNGs and 33 JPEGs;
+all 119 passed independent comparison and exact metadata checks. Four PNGs were
+refused because of an unknown unsafe-to-copy iDOT chunk. One PNG and 12 JPEGs
+missed the gain floor; eight progressive JPEGs were skipped. All 144 source
+hashes remained unchanged.
+
+Counting retained originals, PNG bytes fell from 62,621,206 to 25,446,998 and
+JPEG bytes from 138,566,531 to 135,920,949. The pngquant reference accepted 90
+PNGs and retained one, yielding 25,794,728 bytes; its metadata equivalence was
+not assessed. This is a local workload result, not a general encoder ranking.
+Worst-region spot checks showed visible dithering in photographic detail at
+3x zoom despite passing whole-image quality floors. No perceptual-losslessness
+claim is warranted.
+
+After a metric change, replay the saved output comparisons without re-encoding:
+
+```powershell
+python eval/replay_comparisons.py "$env:TEMP/pixelita-corpus"
+```
+
+Replay requires identical metrics and exit statuses, checks source hashes,
+and records before/after per-process memory in the private directory.
+
+The first replay validated all 210 saved comparisons exactly. Replacing two
+full-frame SSIM luma arrays with rolling row buffers reduced the maximum
+comparison working set from 1,358,282,752 to 499,900,416 bytes. Re-optimizing the
+largest image (3186 by 16820) produced identical output bytes and metrics, with
+peak working set falling from 1,437,802,496 to 632,807,424 bytes. Raw aggregate
+evidence is in `rolling-ssim-2026-10-23.json`. These are single local runs; no
+controlled speedup is claimed. Source decoding still scales with image area.
+`go test ./internal/metric -run '^$' -bench BenchmarkSSIMRows -benchmem`
+checks SSIM allocation growth independently of file I/O.
+
 ## PNG reference comparison
 
 `compare_png.py` accepts PNG paths or directories and compares fixed encoder
