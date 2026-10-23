@@ -19,6 +19,48 @@ This is deterministic acceptance, not an agent usability trial or a representati
 compression benchmark. Timings include process startup and describe one local
 run. No broad performance claim is made.
 
+## Agent workflow trials
+
+`agent_trials.py` runs fresh ephemeral Codex CLI sessions against synthetic
+fixtures. It covers optimization, recovery from duplicate output destinations,
+and damaged-region discovery with a preview. Guided sessions receive a copy of
+the bundled skill; help-only sessions do not. The installed global Pixelita
+skill is disabled per invocation, without changing user configuration. Other
+global instructions may remain. This measures explicit guidance, not automatic
+skill discovery. The runner uses the CLI-default model and records that it is
+not pinned; do not infer a general model or skill advantage from a small batch.
+
+```powershell
+python eval/agent_trials.py "$env:TEMP/pixelita-agent-trials" --repeat 2
+python -m unittest discover -s eval -p test_agent_trials.py -v
+```
+
+Requires an authenticated Codex CLI with working approved shell execution in
+workspace-write mode, built Pixelita binaries, and Pillow for test fixtures.
+Trial logs, prompts, and outputs stay in the specified directory. The runner
+uses no personal corpus data. It records command events and token usage; artifact
+graders independently check source hashes, distinct valid outputs, size/fidelity
+floors, and damage-region overlap. Trace review is still needed to assess the
+requested preview/verification sequence and the quality of explanations.
+Command-event counts are not total tool-call counts.
+
+The first two attempts on 2026-10-23 were infrastructure-blocked. In both
+conditions, the nested CLI rejected shell creation before any Pixelita command
+executed. Authentication and connectivity checks passed, but did not establish
+the cause of the policy rejection. The runner now stops on such a rejection;
+it does not disable rules or weaken the sandbox to continue. No agent task
+success rate, guidance benefit, or tool efficiency is claimed. Aggregate
+evidence is in `agent-trials-2026-10-23.json`; raw traces remain local.
+
+The three deterministic grader tests passed, including negative controls for
+missing outputs, changed sources, and an incorrect damage region. These tests
+establish grader behavior, not agent usability. After the execution environment
+is resolved, rerun in a fresh directory. Resume requires matching binary and
+skill hashes and refuses to silently skip an earlier blocked attempt.
+
+The trace-and-artifact approach follows the
+[official skill evaluation guidance](https://developers.openai.com/blog/eval-skills).
+
 ## Private real-world corpus
 
 Keep the corpus and output directory outside the checkout. The harness stores

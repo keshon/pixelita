@@ -1,0 +1,67 @@
+{
+  "schema": 1,
+  "cliVersion": "codex-cli 0.162.0-alpha.2",
+  "completedTaskTrials": 0,
+  "blockedRunnerAttempts": 2,
+  "records": [
+    {
+      "task": "optimize",
+      "guided": false,
+      "repetition": 1,
+      "exit": 0,
+      "timedOut": false,
+      "seconds": 17.767039000056684,
+      "commandCalls": 0,
+      "failedCommands": 0,
+      "checks": {
+        "sourcesUnchanged": true,
+        "allOutputsMeetPolicy": false,
+        "outputCount": false
+      },
+      "passed": false,
+      "usage": {
+        "input_tokens": 48955,
+        "cached_input_tokens": 43648,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 182,
+        "reasoning_output_tokens": 11
+      },
+      "infrastructureBlocked": true,
+      "rejectedLaunches": 2,
+      "timingIncludesGrading": true
+    },
+    {
+      "task": "optimize",
+      "guided": true,
+      "repetition": 1,
+      "exit": 0,
+      "timedOut": false,
+      "seconds": 25.193133200053126,
+      "commandCalls": 0,
+      "failedCommands": 0,
+      "checks": {
+        "sourcesUnchanged": true,
+        "allOutputsMeetPolicy": false,
+        "outputCount": false
+      },
+      "passed": false,
+      "usage": {
+        "input_tokens": 49057,
+        "cached_input_tokens": 32128,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 208,
+        "reasoning_output_tokens": 30
+      },
+      "infrastructureBlocked": true,
+      "rejectedLaunches": 2,
+      "timingIncludesGrading": true
+    }
+  ],
+  "conclusion": "Nested CLI denied shell launches before Pixelita execution; no agent usability or skill-effect conclusion.",
+  "limitations": [
+    "CLI-default model was not pinned.",
+    "Global Pixelita skill disabled per invocation; guided condition receives a workspace copy.",
+    "Raw transcripts remain local. Product outcomes were graded independently of final prose.",
+    "Zero completed command events does not mean zero attempted tool calls; rejected launches appear in stderr."
+  ]
+}

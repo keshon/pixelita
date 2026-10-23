@@ -38,8 +38,9 @@ and tiny-image metrics.
 The engineering changes do not complete the product-validation phase of the
 agreed plan. Multiple independent real-world asset collections, broader codec
 comparisons, controlled repeated throughput profiling,
-and agent trials with and without the skill remain outstanding. No external service
-or model runner was configured for those trials. No market or usability advantage
+and successful agent trials with and without the skill remain outstanding.
+An authenticated local CLI runner is now available, but its first two attempts
+were blocked by execution policy before Pixelita ran. No market or usability advantage
 is claimed from synthetic acceptance results.
 
 Hosted Windows and Linux tests, vet, builds, capability checks, and artifact
@@ -84,6 +85,14 @@ canonical preview/apply parity, fidelity, metadata, and source-integrity checks.
 Unknown unsafe chunks remain rejected. The saved-candidate policy sweep supports
 an explicit conservative 40 dB / 0.99 command for visually sensitive PNGs;
 defaults and the RGB-plus-alpha policy remain unchanged pending broader trials.
+
+The agent-trial harness now supports isolated synthetic optimization, collision
+recovery, and damage-localization tasks with optional bundled-skill guidance.
+Three deterministic artifact-grader tests passed, including negative controls.
+Both initial model attempts were infrastructure-blocked, not product failures;
+the runner stops on policy rejection and preserves traces locally. A successful
+approved nested execution environment is required before resuming the planned
+repeated trials. No sandbox or policy restrictions were weakened.
 
 ## Deliberate limitations
 
