@@ -1,7 +1,12 @@
 # Pixelita
 
-Optimize image assets, measure the damage, and inspect the worst regions before
-accepting the result. Pure Go, no cgo or external codec executables.
+Pixelita is a command-line image toolkit for reducing PNG and JPEG file sizes,
+converting images to WebP, resizing, and comparing image quality. It works on
+individual files or batches.
+
+Use the unified `pixelita` command or the specialist `img-*` tools to inspect
+images, preview optimizations, and check the results with quality metrics and
+region previews. Written in pure Go, with no cgo or external codec executables.
 
 ## Build
 
