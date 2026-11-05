@@ -15,7 +15,7 @@ operations import the CLI or rendering packages.
 Specialists use engine entry points for quantization, JPEG, WebP, resize, scan,
 comparison, and previews. Parser-specific diagnostics may remain in commands;
 non-CLI callers are also validated by the shared entry points. The API remains
-internal. The root `github.com/keshon/pixelita` package exposes a small experimental
+internal. The root `github.com/keshon/pixelita` package exposes a small public
 Go API for inspect, optimize, compare and capability discovery. It delegates to
 the same engine, returns typed reports, and previews optimization by default.
 Plans remain internal. Callers own filesystem confinement and must explicitly
