@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	imagekit "github.com/keshon/pixelita"
 	"github.com/keshon/pixelita/internal/cli"
 	"github.com/keshon/pixelita/internal/engine"
 	"github.com/keshon/pixelita/internal/ops"
@@ -75,7 +76,7 @@ func runInspect(args []string, stdout, stderr io.Writer) int {
 	} else if err != nil {
 		return argumentError(stdout, stderr, "pixelita inspect", args, "invalid_arguments", err, nil)
 	}
-	rep, err := engine.Inspect(engine.InspectRequest{Context: ctx, Paths: fs.Args(), Measure: measure, Jobs: jobs})
+	rep, err := imagekit.Inspect(imagekit.InspectRequest{Context: ctx, Paths: fs.Args(), Measure: measure, Jobs: jobs})
 	if err != nil {
 		return argumentError(stdout, stderr, "pixelita inspect", args, argumentCode(err), err, nil)
 	}
